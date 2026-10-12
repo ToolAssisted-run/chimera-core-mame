@@ -167,10 +167,10 @@ Chimera, for the owner to decide.
 | 2 | The same in the sandbox | The reference and the sandbox give the same digest, frame by frame | done 2026-10-12 |
 | 3 | The missing-file check, per-game settings, BIOS and parent sets | A set with a file taken out names that file before the machine starts | done 2026-10-12 |
 | 4 | The full build, both flavors | Time, size, memory measured; the walk over every machine | done 2026-10-12 |
-| 5 | The package: controls from the database, Chimera's package checks, a project run by Chimera's engine | The test script | done 2026-10-12; the window test is not written |
+| 5 | The package: controls from the database, Chimera's package checks, a project run by Chimera's engine and opened in its window | The test script and the window test | done 2026-10-12 |
 | 6 | CHD games, hard disks, NVRAM as save data | Crypt Killer (a CHD is in the local folder) | done 2026-10-12 |
 | 7 | Speed: the recompiler's x86-64 back end in the sandbox | Frames per second measured on a 3D board | not started |
-| 8 | Windows, CI, documents, publishing | The owner's word for publishing | not started |
+| 8 | Windows, CI, documents, publishing | The owner's word for publishing | Windows and the documents done; the CI workflow is written and has never run; nothing is published |
 
 ## Measured (2026-10-12)
 
@@ -213,6 +213,20 @@ pressed at random: 1944, Daioh, Forgotten Worlds, Hippodrome, Jurassic Park
 (System 32), Mach Breakers, Magic Sword, Numan Athletics, Phantasm, Varth,
 Kabuki Klash, Samurai Shodown IV and the Konami GV BIOS. Vertical games come
 out upright (Varth 224x384).
+
+The window test (`tests/run-frontend.sh`, Chimera.exe under Mono on a
+private display), 3 passed: Pong runs 300 frames in the window with no
+files; the keys the package ships are Chimera's; Shinobi's work RAM after
+300 frames in the window is what the headless runner leaves.
+
+Windows (the same package, Chimera's headless runner built for Windows, run
+on this PC): the picture at the last frame is byte for byte Linux's for
+Shinobi (1,200 frames), Super Street Fighter II Turbo (a project of two
+sets with a movie, 2,400 frames) and Crypt Killer (a set and a disc image
+with a movie, 4,600 frames), and so is Shinobi's exported save data.
+
+Not measured: the speed of a board whose processor MAME recompiles. No
+complete set of such a game is in the local folder.
 
 Crypt Killer takes no coin for its first 3,500 frames (it is testing
 itself), and it is two coins a credit.

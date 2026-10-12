@@ -1145,8 +1145,9 @@ void find_domains()
 	s_domains_of = s_machine;
 	if (!s_machine) return;
 	// the machine's named memory, in name order (MAME keeps it unordered)
+	// (":nvram" is nvram: MAME's tags start at the machine, which is ":")
 	for (auto const &share : s_machine->memory().shares())
-		s_domains.push_back({ share.first, static_cast<uint8_t *>(share.second->ptr()), int64_t(share.second->bytes()) });
+		s_domains.push_back({ share.first.c_str() + (share.first[0] == ':' ? 1 : 0), static_cast<uint8_t *>(share.second->ptr()), int64_t(share.second->bytes()) });
 	std::sort(s_domains.begin(), s_domains.end(), [] (domain const &a, domain const &b) { return a.name < b.name; });
 }
 }
