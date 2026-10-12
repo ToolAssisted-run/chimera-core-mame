@@ -1,0 +1,26 @@
+{
+  "_comment": "This file lists the files a project of this core takes. Chimera's New Project window is built from it. A project file records its files under the slot ids used here.",
+  "slots": [
+    {
+      "id": "romset",
+      "title": "Rom sets",
+      "min": 1,
+      "max": 12,
+      "formats": [
+        "zip",
+        "7z"
+      ],
+      "help": "The game's ROM set comes first, with the file name MAME uses (for example ssf2t.zip). The name is how the core knows which game it is. Then add the other sets the game reads from: its parent's set if it is a clone, the BIOS set of its board (neogeo.zip for a Neo Geo game), and the sets of the devices it uses (qsound_hle.zip for a Capcom game with QSound). The settings page says which sets the game needs and names every file that is missing. Each file is found by its checksum first and by its name second."
+    },
+    {
+      "id": "disc",
+      "title": "Disc images",
+      "min": 0,
+      "max": 8,
+      "formats": [
+        "chd"
+      ],
+      "help": "The CHD images of a game that has a hard disk, a CD or a laserdisc, with the file names MAME uses (for example 420uaa04.chd). The settings page names an image that is missing."
+    }
+  ]
+}
