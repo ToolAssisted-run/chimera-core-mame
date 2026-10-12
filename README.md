@@ -14,28 +14,36 @@ one vertical blank of the screen to the next.
 
 ## What a project needs
 
-- **Rom sets** (`.zip` or `.7z`). The game's set comes first, with the file
-  name MAME uses: `ssf2t.zip` is the machine `ssf2t`. Then the other sets the
-  game reads from: its parent's if it is a clone, its board's BIOS set
-  (`neogeo.zip`), the sets of the devices it uses (`qsound_hle.zip`).
+- **The game's rom set** (`.zip` or `.7z`), with the file name MAME uses:
+  `ssf2t.zip` is the machine `ssf2t`.
+- **Firmware**: the other rom sets the game reads from - its board's BIOS
+  set (`neogeo.zip`), its parent's set if it is a clone, the sets of the
+  devices its board has (`qsound_hle.zip`). The core works out which the game
+  needs, and the New Project window asks for them on its Firmware page.
+  Chimera remembers them, so a BIOS set given once serves every game of that
+  board. A set the game's own file already holds is not asked for.
 - **Disc images** (`.chd`) for a game with a hard disk, a CD or a laserdisc.
 - **Save data** (optional): the files Export Save Data wrote.
 
 The package carries no ROM and no disc image.
 
 **The core says what is missing.** It carries MAME's own database of every
-machine's files. When you have chosen the files, the settings page of the
-New Project window shows the game's full name, MAME's notes on how well it
-is emulated, the sets the game reads from, and every file that is missing or
-wrong with the set it belongs in:
+machine's files. When you have chosen the game's rom set, the settings page
+of the New Project window shows the game's full name, MAME's notes on how
+well it is emulated, the sets the game reads from, and every file of its own
+set that is missing or wrong:
 
 > Super Street Fighter II Turbo (World 940223) (1994, Capcom). It reads 25
-> files from ssf2t.zip, qsound_hle.zip (NOT GIVEN). 1 file is missing or
-> wrong: dl-1425.bin (in qsound_hle.zip) - missing.
+> files from ssf2t.zip, qsound_hle.zip. The Firmware page asks for
+> qsound_hle.zip. Every file of the game's own set was found.
 
-A project with a required file missing does not start, and says the same.
-Rom sets change between MAME versions; this core wants the sets of the MAME
-version it is built from (`docs/PLAN.md` names it).
+A project with a required file missing does not start, and names the file
+and the set it belongs in. Rom sets change between MAME versions; this core
+wants the sets of the MAME version it is built from (`docs/PLAN.md` names
+it).
+
+This needs a Chimera that knows a game can have firmware of its own (the
+change is in Chimera's design log under 2026-10-12).
 
 ## Controls
 
@@ -46,8 +54,11 @@ has; the rest leave the input roll. `Other 1`, `Other 2`... are a game's
 controls that have no type of their own (a keypad, a keyboard, a board's odd
 switches), in the order MAME lists them.
 
-A control is called what MAME calls its type, not what the game calls it:
-Street Fighter's six attacks are `P1 Button 1` to `P1 Button 6`.
+A control is called what MAME calls its type: Fatal Fury's four buttons are
+`P1 Button 1` to `P1 Button 4`. Where MAME's driver has the game's own name
+for a control (A, B, C and D on the Neo Geo; Attack and Jump in Hippodrome),
+Chimera shows it beside the control's name: in the hover text of its
+TAStudio column and in the key configuration. Many drivers name none.
 
 An analog control (a paddle, a pedal, a light gun, an analog stick) is an
 axis: its value is added to the control's rest position and reaches the game

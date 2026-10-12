@@ -1,7 +1,9 @@
 #!/bin/sh
 # Works on one game by hand: makes a work folder holding the given sets (from
 # tests/roms-local) the way the sandbox mounts them, and runs the native
-# reference on it. The first set names the game.
+# reference on it. The first set is the game's: it names the game and is the
+# one file of the Rom set slot. The others are mounted beside it, as Chimera
+# mounts a project's firmware.
 #
 # Usage: tests/try.sh [-g] [-k <settings json>] [-d <folder>] "<set> [<set>...]" [run options]
 #   -g   the sandbox build and not the reference
@@ -26,7 +28,7 @@ work="$(mktemp -d "${TMPDIR:-/tmp}/mame-try.XXXXXX")"
 list=""
 for s in $sets; do
 	for f in "$here/roms-local/$s".zip "$here/roms-local/$s".7z "$here/roms-local/$s".chd; do
-		[ -f "$f" ] && { cp "$f" "$work/"; list="$list${list:+,}\"$(basename "$f")\""; }
+		[ -f "$f" ] && { cp "$f" "$work/"; [ -n "$list" ] || list="\"$(basename "$f")\""; }
 	done
 done
 [ -n "$list" ] || list="\"${sets%% *}.zip\""

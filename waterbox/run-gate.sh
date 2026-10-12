@@ -83,7 +83,9 @@ have() {
 	return 0
 }
 # folder <name> <settings json> <file>...: a work folder as the sandbox mounts
-# a project - the files under their names, the first rom set first
+# a project - the files under their names. The first is the game's rom set,
+# the one file of the Rom set slot; the other sets are there as a project's
+# firmware is: mounted under MAME's names for them
 folder() {
 	fd_dir="$work/$1"; fd_settings="$2"; shift 2
 	mkdir -p "$fd_dir"
@@ -92,12 +94,18 @@ folder() {
 		case "$fd_file" in
 			*.nv) cp "$fd_file" "$fd_dir/"; fd_saves="$fd_saves${fd_saves:+,}\"$(basename "$fd_file")\"" ;;
 			*) [ -f "$roms/$fd_file" ] && cp "$roms/$fd_file" "$fd_dir/"
-				fd_sets="$fd_sets${fd_sets:+,}\"$fd_file\"" ;;
+				[ -n "$fd_sets" ] || fd_sets="\"$fd_file\"" ;;
 		esac
 	done
 	printf '{"romset":[%s],"savedata":[%s]}' "$fd_sets" "$fd_saves" > "$fd_dir/slots"
 	printf '%s' "$fd_settings" > "$fd_dir/settings"
 }
+# firmware_of <answer to the New Project window>: the firmware ids the core
+# lists for the game, a "?" after one that is needed with some settings only
+firmware_of() { python3 -c "
+import json, sys
+t = open(sys.argv[1]).read()
+print(' '.join(f['id'] + ('?' if 'requiredWhen' in f else '') for f in json.loads(t[t.index('{'):]).get('firmware', [])))" "$1" 2> /dev/null; }
 # index <panel listing> <control name>: a control's place on the panel
 index() { awk -v n="'$2'" 'index($0, n) && $1=="panel" {print $2; exit}' "$1"; }
 
@@ -301,12 +309,20 @@ lag() {
 
 if game ssf2t "Super Street Fighter II Turbo (CPS-2)" 1500 ssf2t.zip qsound_hle.zip; then
 	lag ssf2t
-	# the device set taken away: named before the machine is built, and at load
+	# The device set the game needs beside its own is the project's firmware.
+	# With only the game's set: the answer to the New Project window lists
+	# qsound_hle.zip as firmware and says its Firmware page asks for it, and a
+	# load without it is refused, naming the set and the file.
 	folder ssf2t-noq '{}' ssf2t.zip
 	"$wbxrun" "$core" "$work/ssf2t-noq" --suggest > "$work/ssf2t-noq.suggest" 2> /dev/null || true
 	"$wbxrun" "$core" "$work/ssf2t-noq" --frames 1 > "$work/ssf2t-noq.run" 2>&1 || true
-	check "ssf2t: a missing device set is named, with its file" "dl-1425.bin, qsound_hle.zip" \
-		sh -c "grep -q 'qsound_hle.zip (NOT GIVEN)' '$work/ssf2t-noq.suggest' && grep -q 'dl-1425.bin (in qsound_hle.zip) - missing' '$work/ssf2t-noq.suggest' && grep -q 'Init failed.*dl-1425.bin' '$work/ssf2t-noq.run'"
+	"$wbxrun" "$core" "$work/ssf2t" --suggest > "$work/ssf2t.suggest" 2> /dev/null || true
+	check "ssf2t: the device set it needs is asked for as firmware" "$(firmware_of "$work/ssf2t-noq.suggest")" \
+		sh -c "[ '$(firmware_of "$work/ssf2t-noq.suggest")' = qsound_hle.zip ] && grep -q 'The Firmware page asks for qsound_hle.zip' '$work/ssf2t-noq.suggest'"
+	check "ssf2t: the answer is the same once the set is given" "" \
+		[ "$(firmware_of "$work/ssf2t.suggest")" = "$(firmware_of "$work/ssf2t-noq.suggest")" ]
+	check "ssf2t: a load without the device set is refused, naming it" "dl-1425.bin, qsound_hle.zip" \
+		sh -c "grep -q 'Init failed.*qsound_hle.zip (NOT GIVEN)' '$work/ssf2t-noq.run' && grep -q 'dl-1425.bin (in qsound_hle.zip) - missing' '$work/ssf2t-noq.run'"
 	# save data: the EEPROM out, back in, out again
 	mkdir -p "$work/ssf2t.save1" "$work/ssf2t.save2"
 	"$wbxrun" "$core" "$work/ssf2t" --frames 2400 --report 2400 --exercise --savedata-out "$work/ssf2t.save1" > /dev/null 2>&1 || true
@@ -322,21 +338,24 @@ if game ssf2t "Super Street Fighter II Turbo (CPS-2)" 1500 ssf2t.zip qsound_hle.
 	else
 		report FAIL "ssf2t: its save data goes out and back in unchanged" "no eeprom.nv exported"
 	fi
-	# through Chimera's engine, as a project of two sets with a movie: a coin,
-	# Start and a punch change the picture an idle movie leaves
+	# through Chimera's engine, as a project - the game's set in its slot, the
+	# device set as firmware - with a movie: a coin, Start and a punch change
+	# the picture an idle movie leaves
 	if [ -x "$run" ] && [ -f "$pkg" ]; then
 		python3 "$root/tests/make-project.py" "$pkg" "$work/ssf2t.chimeraProject" 2400 "panel=$work/ssf2t.panel" \
 			"press=Coin 1:1600:5" "press=1 Player Start:1800:5" "press=P1 Button 1:2000:300" \
-			-- "romset=$roms/ssf2t.zip" "romset=$roms/qsound_hle.zip" > "$work/ssf2t.project.log" 2>&1 || true
+			"firmware=$roms/qsound_hle.zip" -- "romset=$roms/ssf2t.zip" > "$work/ssf2t.project.log" 2>&1 || true
 		python3 "$root/tests/make-project.py" "$pkg" "$work/ssf2t-idle.chimeraProject" 2400 "panel=$work/ssf2t.panel" \
-			-- "romset=$roms/ssf2t.zip" "romset=$roms/qsound_hle.zip" >> "$work/ssf2t.project.log" 2>&1 || true
-		"$run" --project "$work/ssf2t.chimeraProject" "$pkg" --files "$roms" --screenshot "2399=$work/ssf2t.tga" > "$work/ssf2t.engine" 2>&1 || true
-		"$run" --project "$work/ssf2t-idle.chimeraProject" "$pkg" --files "$roms" --screenshot "2399=$work/ssf2t-idle.tga" > "$work/ssf2t-idle.engine" 2>&1 || true
-		check "ssf2t: a project of two sets plays a movie in Chimera's engine" "2400 frames" \
+			"firmware=$roms/qsound_hle.zip" -- "romset=$roms/ssf2t.zip" >> "$work/ssf2t.project.log" 2>&1 || true
+		"$run" --project "$work/ssf2t.chimeraProject" "$pkg" --files "$roms" --firmware "qsound_hle.zip=$roms/qsound_hle.zip" \
+			--screenshot "2399=$work/ssf2t.tga" --meta "$work/ssf2t.meta" > "$work/ssf2t.engine" 2>&1 || true
+		"$run" --project "$work/ssf2t-idle.chimeraProject" "$pkg" --files "$roms" --firmware "qsound_hle.zip=$roms/qsound_hle.zip" \
+			--screenshot "2399=$work/ssf2t-idle.tga" > "$work/ssf2t-idle.engine" 2>&1 || true
+		check "ssf2t: a project with its firmware plays a movie in Chimera's engine" "2400 frames" \
 			sh -c "grep -q '^frames=2400' '$work/ssf2t.engine' && grep -q '^frames=2400' '$work/ssf2t-idle.engine'"
 		check "ssf2t: the movie's coin, Start and punch change the picture" "" differ "$work/ssf2t.tga" "$work/ssf2t-idle.tga"
 	else
-		report SKIP "ssf2t: a project of two sets plays a movie in Chimera's engine" "no chimera-run or package"
+		report SKIP "ssf2t: a project with its firmware plays a movie in Chimera's engine" "no chimera-run or package"
 	fi
 fi
 
@@ -345,6 +364,45 @@ if game fatfury3 "Fatal Fury 3 (Neo Geo)" 600 fatfury3.zip neogeo.zip; then
 	# the BIOS setting is the machine's: another BIOS, another run
 	folder fatfury3-jp '{"bios":"Japan MVS (Ver. 3)"}' fatfury3.zip neogeo.zip
 	"$wbxrun" "$core" "$work/fatfury3-jp" --frames 1500 --report 50 --exercise > "$work/fatfury3-jp.w" 2> "$work/fatfury3-jp.err" || true
+	# The BIOS set is firmware only as far as the game's own set lacks it. A
+	# set with the BIOS files taken out needs neogeo.zip whatever the BIOS; a
+	# set that carries some of them needs it with the other BIOS choices only,
+	# and says with which.
+	"$wbxrun" "$core" "$work/fatfury3" --suggest > "$work/fatfury3.suggest" 2> /dev/null || true
+	mkdir -p "$work/fatfury3-split"
+	python3 - "$roms/fatfury3.zip" "$roms/neogeo.zip" "$work/fatfury3-split/fatfury3.zip" <<'PY'
+import sys, zipfile
+bios = set(zipfile.ZipFile(sys.argv[2]).namelist())
+game = zipfile.ZipFile(sys.argv[1])
+out = zipfile.ZipFile(sys.argv[3], "w", zipfile.ZIP_DEFLATED)
+for name in game.namelist():
+    if name not in bios:
+        out.writestr(name, game.read(name))
+out.close()
+PY
+	printf '{"romset":["fatfury3.zip"],"savedata":[]}' > "$work/fatfury3-split/slots"; printf '{}' > "$work/fatfury3-split/settings"
+	"$wbxrun" "$core" "$work/fatfury3-split" --suggest > "$work/fatfury3-split.suggest" 2> /dev/null || true
+	"$wbxrun" "$core" "$work/fatfury3-split" --frames 1 > "$work/fatfury3-split.run" 2>&1 || true
+	cp "$roms/neogeo.zip" "$work/fatfury3-split/"
+	"$wbxrun" "$core" "$work/fatfury3-split" --frames 600 --report 600 > "$work/fatfury3-split.w" 2> /dev/null || true
+	check "fatfury3: a set without its BIOS files asks for neogeo.zip as firmware" "$(firmware_of "$work/fatfury3-split.suggest")" \
+		sh -c "[ '$(firmware_of "$work/fatfury3-split.suggest")' = neogeo.zip ] && grep -q 'Init failed.*neogeo.zip (NOT GIVEN)' '$work/fatfury3-split.run'"
+	check "fatfury3: the same set runs once neogeo.zip is there" "$(tail -1 "$work/fatfury3-split.w" | cut -c1-40)" \
+		[ "$(stream "$work/fatfury3-split.w" | wc -l)" = 1 ]
+	if [ -n "$(firmware_of "$work/fatfury3.suggest")" ]; then
+		check "fatfury3: a set that carries some BIOSes asks only with the others" "$(firmware_of "$work/fatfury3.suggest") (? = with some BIOS choices)" \
+			[ "$(firmware_of "$work/fatfury3.suggest")" = "neogeo.zip?" ]
+	fi
+	# What the game calls its controls reaches Chimera, beside their names:
+	# MAME's Neo Geo driver calls the four buttons A, B, C and D.
+	if [ -x "$run" ] && [ -f "$pkg" ]; then
+		: > "$work/empty.movie"
+		"$run" "$pkg" "$roms/fatfury3.zip" "$work/empty.movie" --frames 1 --record "$work/fatfury3.rec" --meta "$work/fatfury3.meta" > "$work/fatfury3.engine" 2>&1 || true
+		check "fatfury3: the game's own names for its controls reach Chimera" "$(grep '^label=P[12] Button' "$work/fatfury3.meta" 2> /dev/null | cut -c7- | tr '\n' ' ')" \
+			sh -c "grep -qx 'label=P1 Button 1=A' '$work/fatfury3.meta' && grep -qx 'label=P2 Button 4=D' '$work/fatfury3.meta' && ! grep -q '^label=P1 Up=' '$work/fatfury3.meta'"
+	else
+		report SKIP "fatfury3: the game's own names for its controls reach Chimera" "no chimera-run or package"
+	fi
 	check "fatfury3: the BIOS setting changes the machine" "Japan MVS (Ver. 3)" \
 		sh -c "[ \"\$(awk '/^frame/' '$work/fatfury3-jp.w' | wc -l)\" = 30 ] && ! cmp -s '$work/fatfury3-jp.w' '$work/fatfury3.w'"
 fi

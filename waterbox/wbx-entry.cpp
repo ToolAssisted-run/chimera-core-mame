@@ -35,9 +35,10 @@ static std::string JsonString(const std::string &s)
 	return out + "\"";
 }
 
-/* The project's rom sets, as the engine mounted them: the Rom set slot's
- * files, in order. A set opened with no project has no slot map: it is
- * mounted under its own name, and rom.name says which. */
+/* The project's rom set, as the engine mounted it: the Rom set slot's file
+ * (the game's own set; the other sets it needs are the project's firmware,
+ * mounted under MAME's names for them). A set opened with no project has no
+ * slot map: it is mounted under its own name, and rom.name says which. */
 static std::vector<std::string> RomSets()
 {
 	std::vector<std::string> sets;
@@ -107,7 +108,8 @@ ECL_EXPORT const char *SuggestSettings(void)
 	std::string why;
 	if (!Describe(why))
 		return g_suggestion.assign("{\"values\":{},\"note\":" + JsonString(why) + "}").c_str();
-	g_suggestion = "{\"values\":{},\"note\":" + JsonString(mame_report()) + ",\"settings\":" + mame_game_settings() + "}";
+	g_suggestion = "{\"values\":{},\"note\":" + JsonString(mame_report_for_wizard()) + ",\"settings\":" + mame_game_settings()
+		+ ",\"firmware\":" + mame_game_firmware() + "}";
 	return g_suggestion.c_str();
 }
 
@@ -174,6 +176,9 @@ ECL_EXPORT int Init(void)
 ECL_EXPORT void SetButton(int32_t index, int32_t state) { mame_set_button(index, state); }
 ECL_EXPORT int IsButtonActive(int32_t index) { return mame_button_active(index); }
 ECL_EXPORT const char *GetButtonName(int32_t index) { return mame_button_name(index); }
+/* what THIS GAME calls a control ("Weak Punch" for P1 Button 1), or "" */
+ECL_EXPORT const char *GetButtonLabel(int32_t index) { return mame_button_label(index); }
+ECL_EXPORT const char *GetAxisLabel(int32_t index) { return mame_axis_label(index); }
 ECL_EXPORT int GetButtonCount(void) { return mame_button_count(); }
 
 /* The panel is wider than the packed 64: every control arrives through

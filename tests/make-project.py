@@ -5,10 +5,13 @@ panel's own control names.
 
 usage: make-project.py <package> <out.chimeraProject> <frames>
                        [<setting>=<value> ...] [press=<control>:<first>:<count> ...]
+                       [firmware=<file> ...]
                        -- <slot=file> [<slot=file> ...]
 
-The first file of the romset slot names the game. A setting is one of the
-game's own ("dip.Lives=5", "bios=...").
+The file of the romset slot names the game. A setting is one of the game's
+own ("dip.Lives=5", "bios=..."). firmware=<file> is another rom set the game
+needs (its BIOS set, a device's set): it is recorded as the project's
+firmware under its file name, which is the id the core gives it.
 
 A movie carries only the controls the game has, so the script must be told
 which they are: panel=<file> is the output of the test harness's
@@ -64,9 +67,12 @@ def main():
 
     presses = {}
     overrides = []
+    given = []
     for o in options:
         k, v = o.split("=", 1)
-        if k == "panel":
+        if k == "firmware":
+            given.append({"id": os.path.basename(v), "sha1": sha1(v)})
+        elif k == "panel":
             live, live_axes = set(), set()
             for line in open(v):
                 word = line.split()
@@ -120,7 +126,7 @@ def main():
         settings[k] = v
 
     firmware = [{"id": d["id"], "sha1": d.get("sha1", "")}
-                for d in cfg.get("firmware", []) if holds(d.get("requiredWhen"), settings)]
+                for d in cfg.get("firmware", []) if holds(d.get("requiredWhen"), settings)] + given
 
     project = {
         "id": "mame-test-%s" % os.path.splitext(files[0]["name"])[0],

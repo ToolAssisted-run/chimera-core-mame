@@ -9,12 +9,17 @@
 #    game has;
 #  - with a real game (Shinobi, when its set is in tests/roms-local): the
 #    game's memory after a number of frames in the window is byte for byte
-#    what Chimera's headless runner leaves at the same frame.
+#    what Chimera's headless runner leaves at the same frame;
+#  - with a game that needs another rom set (Super Street Fighter II Turbo
+#    and qsound_hle.zip, when both are there): the window asks the core which
+#    sets the game needs and takes them from Chimera's firmware, and without
+#    that firmware it refuses the project and names the set.
 #
 # The window takes a .zip as an archive to choose a file from, so each game
 # is opened as a project, written by make-project.py with its files beside it.
 #
-# Usage: tests/run-frontend.sh --chimera-root <chimera checkout> [--frames N] [-s dev]
+# Usage: tests/run-frontend.sh --chimera-root <chimera checkout> [--frames N] [-s dev] [--keep]
+#   --keep   leave the work folder (logs, configurations, projects) and say where it is
 # Needs: mono, Xvfb, Chimera built with its window (dotnet build), and the
 # package installed in that checkout (waterbox/build-package.sh -r <chimera>;
 # -s dev for the small build's).
@@ -26,8 +31,10 @@ wb="$root/waterbox"
 frames=300
 chimera_root=""
 tail=""
+keep=""
 while [ $# -gt 0 ]; do
 	case "$1" in
+		--keep) keep=1 ;;
 		--chimera-root) chimera_root="$2"; shift ;;
 		--frames) frames="$2"; shift ;;
 		-s) [ "$2" = dev ] && tail="-dev"; shift ;;
@@ -55,7 +62,10 @@ python3 -c "
 import sys, zipfile
 zipfile.ZipFile(sys.argv[1], 'w').close()" "$work/pong.zip"
 xvfb_pid=""
-cleanup() { [ -n "$xvfb_pid" ] && kill "$xvfb_pid" 2>/dev/null; rm -rf "$work"; }
+cleanup() {
+	[ -n "$xvfb_pid" ] && kill "$xvfb_pid" 2>/dev/null
+	if [ -n "$keep" ]; then echo "work folder kept: $work"; else rm -rf "$work"; fi
+}
 trap cleanup EXIT
 
 export LD_LIBRARY_PATH="$chimera_root/build/dll:$chimera_root/build:/usr/lib/x86_64-linux-gnu"
@@ -84,23 +94,24 @@ report() {
 	case "$2" in PASS) ok=$((ok + 1)) ;; SKIP) skipped=$((skipped + 1)) ;; *) failed=$((failed + 1)) ;; esac
 }
 
-# run_frontend <tag> <configuration> <frames> <domain or ""> <rom set>...
-# The game's files are copied beside its project, where Chimera looks.
+# run_frontend <tag> <configuration> <frames> <domain or ""> <rom set> [<firmware set>...]
+# The game's rom set is copied beside its project, where Chimera looks; the
+# other sets are the project's firmware, which Chimera finds through its
+# configuration (settings-config.py) and not beside the project.
 run_frontend() {
-	local tag="$1" cfg="$2" nframes="$3" domain="$4"; shift 4
-	local dir="$work/$tag" job="$work/job.$tag.txt" slots="" list=""
-	mkdir -p "$dir"
-	for f in "$@"; do
-		[ -f "$dir/$(basename "$f")" ] || cp "$f" "$dir/"
-		slots="$slots romset=$dir/$(basename "$f")"
-		list="$list${list:+,}\"$(basename "$f")\""
-	done
+	local tag="$1" cfg="$2" nframes="$3" domain="$4" game="$5"; shift 5
+	local dir="$work/$tag" job="$work/job.$tag.txt" fw="" probe="$work/$tag.probe"
+	mkdir -p "$dir" "$probe"
+	[ -f "$dir/$(basename "$game")" ] || cp "$game" "$dir/"
 	# which of the panel's controls this game has: a movie carries only those
-	printf '{"romset":[%s],"savedata":[]}' "$list" > "$dir/slots"; printf '{}' > "$dir/settings"
-	"$bin/run-wbx" "$bin/core.wbx" "$dir" --frames 1 --list-panel > "$work/$tag.panel" 2> /dev/null
-	rm -f "$dir/slots" "$dir/settings"
+	cp "$game" "$probe/"
+	for f in "$@"; do cp "$f" "$probe/"; fw="$fw firmware=$f"; done
+	printf '{"romset":["%s"],"savedata":[]}' "$(basename "$game")" > "$probe/slots"; printf '{}' > "$probe/settings"
+	"$bin/run-wbx" "$bin/core.wbx" "$probe" --frames 1 --list-panel > "$work/$tag.panel" 2> /dev/null
+	rm -rf "$probe"
 	# shellcheck disable=SC2086
-	python3 "$here/make-project.py" "$package" "$dir/$tag.chimeraProject" "$nframes" "panel=$work/$tag.panel" -- $slots > "$work/$tag.log" 2>&1 || return 1
+	python3 "$here/make-project.py" "$package" "$dir/$tag.chimeraProject" "$nframes" "panel=$work/$tag.panel" $fw \
+		-- "romset=$dir/$(basename "$game")" > "$work/$tag.log" 2>&1 || return 1
 	{
 		echo "frames=$nframes"
 		echo "out=$work/$tag.ram.bin"
@@ -148,6 +159,38 @@ else
 	else
 		report "window:memory" FAIL "the memory differs from the headless runner's (or one of the two is missing)"
 	fi
+fi
+
+if [ ! -f "$roms/ssf2t.zip" ] || [ ! -f "$roms/qsound_hle.zip" ] || [ ! -x "$runner" ]; then
+	report "window:firmware" SKIP "needs ssf2t.zip and qsound_hle.zip in $roms and chimera-run"
+else
+	# the device set lives in a folder of its own, which Chimera is told of
+	# only by the configuration of the run that is meant to find it
+	fwdir="$(mktemp -d)"
+	cp "$roms/ssf2t.zip" "$work/ssf2t.zip"
+	cp "$roms/qsound_hle.zip" "$fwdir/qsound_hle.zip"
+	# first, with no firmware known to Chimera: refused, with the set's name
+	if run_frontend ssf2tnofw "$work/config.base.ini" 1 "" "$work/ssf2t.zip" "$fwdir/qsound_hle.zip"; then
+		report "window:refusal" FAIL "the project opened without qsound_hle.zip"
+	elif grep -q "qsound_hle.zip" "$work/ssf2tnofw.log"; then
+		# Chimera's own check of the project's firmware comes first: the set
+		# the project names is not on hand
+		report "window:refusal" PASS "without the firmware the project is not opened, and qsound_hle.zip is named: $(grep -o '[^.]*qsound_hle.zip[^.]*' "$work/ssf2tnofw.log" | head -1 | cut -c1-120)"
+	else
+		report "window:refusal" FAIL "refused, but the set is not named: $(tail -2 "$work/ssf2tnofw.log" | tr '\n' ' ' | cut -c1-200)"
+	fi
+	: > "$work/empty.movie"
+	"$runner" "$package" "$work/ssf2t.zip" "$work/empty.movie" --frames "$frames" --record "$work/rec2.txt" \
+		--firmware "qsound_hle.zip=$fwdir/qsound_hle.zip" --dump "gfxram=$work/engine2.ram.bin" > "$work/engine2.log" 2>&1
+	python3 "$here/settings-config.py" "$config" "$work/config.fw.ini" '{}' "{\"qsound_hle.zip\": \"$fwdir/qsound_hle.zip\"}"
+	if ! run_frontend ssf2t "$work/config.fw.ini" "$frames" gfxram "$work/ssf2t.zip" "$fwdir/qsound_hle.zip"; then
+		report "window:firmware" FAIL "Chimera did not finish the run: $(value ssf2t detail) $(tail -2 "$work/ssf2t.log" | tr '\n' ' ' | cut -c1-200)"
+	elif [ -s "$work/engine2.ram.bin" ] && cmp -s "$work/engine2.ram.bin" "$work/ssf2t.ram.bin"; then
+		report "window:firmware" PASS "Super Street Fighter II Turbo opened with qsound_hle.zip from Chimera's firmware: after $frames frames its video RAM ($(wc -c < "$work/ssf2t.ram.bin") bytes) is what the headless runner leaves"
+	else
+		report "window:firmware" FAIL "the memory differs from the headless runner's (or one of the two is missing)"
+	fi
+	rm -rf "$fwdir"
 fi
 
 echo

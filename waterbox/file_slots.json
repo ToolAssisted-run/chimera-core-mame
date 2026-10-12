@@ -3,14 +3,14 @@
   "slots": [
     {
       "id": "romset",
-      "title": "Rom sets",
+      "title": "Rom set",
       "min": 1,
-      "max": 12,
+      "max": 1,
       "formats": [
         "zip",
         "7z"
       ],
-      "help": "The game's ROM set comes first, with the file name MAME uses (for example ssf2t.zip). The name is how the core knows which game it is. Then add the other sets the game reads from: its parent's set if it is a clone, the BIOS set of its board (neogeo.zip for a Neo Geo game), and the sets of the devices it uses (qsound_hle.zip for a Capcom game with QSound). The settings page says which sets the game needs and names every file that is missing. Each file is found by its checksum first and by its name second."
+      "help": "The game's ROM set, with the file name MAME uses (for example ssf2t.zip). The name is how the core knows which game it is. The other sets the game reads from - its board's BIOS set (neogeo.zip), its parent's set if it is a clone, the sets of the devices it uses (qsound_hle.zip) - are asked for on the Firmware page, where Chimera remembers them for the next game. The settings page names every file that is missing."
     },
     {
       "id": "disc",

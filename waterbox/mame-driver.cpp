@@ -33,6 +33,7 @@
 #include "rendersw.hxx"
 #include "drivenum.h"
 #include "romload.h"
+#include "fileio.h"
 #include "screen.h"
 #include "dinvram.h"
 #include "ioprocs.h"
@@ -253,8 +254,20 @@ void bind_panel(running_machine &machine)
 				if (at == button_at.end()) continue;
 				c = &s_buttons[at->second];
 			}
+			// what the game calls it, when that is something else than the
+			// control's own name
+			// - and without the player in front, which the control's name has
+			// already ("P1 Attack" for P1 Button 1 is Attack; the driver may
+			// write the player as %p, which MAME fills in)
 			if (c->fields.empty() && field.specific_name())
-				c->label = field.specific_name();
+			{
+				std::string label = field.name();
+				std::string const player = "P" + std::to_string(int(field.player()) + 1) + " ";
+				if (label.compare(0, player.size(), player) == 0) label.erase(0, player.size());
+				std::string bare = c->name;
+				if (bare.compare(0, player.size(), player) == 0) bare.erase(0, player.size());
+				if (label != c->name && label != bare) c->label = label;
+			}
 			c->fields.push_back(&field);
 			s_control_ports.insert(port.second.get());
 			if (field.has_dynamic_write()) s_controls_pushed = true;
@@ -712,11 +725,26 @@ struct needed_file
 	std::string set;        // the set it belongs in
 	bool disc;
 	bool required;          // has a known good dump, and is not optional
+	bool in_game = false;   // a file of another set that the game's own set holds too
+	u32 bios = 0;           // 0: read whatever the BIOS; else the one BIOS that reads it
 	std::string problem;    // "", or what is wrong with it
 };
 
-// every file the machine reads, with what MAME's audit found for it
-std::vector<needed_file> audit(emu_options &options, game_driver const &driver, machine_config &config)
+// is this file in the game's own set, looked for nowhere else
+bool in_own_set(emu_options &options, std::string const &game, rom_entry const *rom)
+{
+	util::hash_collection const hashes(rom->hashdata());
+	u32 crc = 0;
+	bool const has_crc = hashes.crc(crc);
+	emu_file file(options.media_path(), std::vector<std::string>{ game }, OPEN_FLAG_READ | OPEN_FLAG_NO_PRELOAD);
+	file.set_restrict_to_mediapath(1);
+	return !(has_crc ? file.open(rom->name(), crc) : file.open(rom->name()));
+}
+
+// Every file the machine reads, with what MAME's audit found for it - the
+// files of every BIOS the machine can start with, each marked with its BIOS.
+// chosen is the BIOS it will start with: the one asked for, or MAME's default.
+std::vector<needed_file> audit(emu_options &options, game_driver const &driver, machine_config &config, u32 &chosen)
 {
 	// what each ancestor's own set holds: a file of the game that a parent
 	// has too is kept in the parent's set
@@ -724,11 +752,10 @@ std::vector<needed_file> audit(emu_options &options, game_driver const &driver, 
 	for (int at = driver_list::find(driver.parent); at >= 0; at = driver_list::find(driver_list::driver(at).parent))
 		ancestors.emplace_back(driver_list::driver(at).name, rom_build_entries(driver_list::driver(at).rom));
 
-	// the BIOS the machine starts with: the one asked for, or MAME's default
-	u32 bios = config.root_device().default_bios();
+	chosen = config.root_device().default_bios();
 	if (auto const asked = s_options.find("bios"); asked != s_options.end())
 		for (romload::system_bios const &choice : romload::entries(driver.rom).get_system_bioses())
-			if (asked->second == choice.get_name()) bios = choice.get_value();
+			if (asked->second == choice.get_name()) chosen = choice.get_value();
 
 	std::vector<needed_file> out;
 	driver_enumerator drivers(options, driver);
@@ -743,10 +770,13 @@ std::vector<needed_file> audit(emu_options &options, game_driver const &driver, 
 			for (rom_entry const *rom = rom_first_file(region); rom; rom = rom_next_file(rom))
 			{
 				util::hash_collection const hashes(rom->hashdata());
-				// a file of a BIOS the machine will not start with is not read
-				if (ROM_GETBIOSFLAGS(rom) != 0 && ROM_GETBIOSFLAGS(rom) != (&device == &config.root_device() ? bios : device.default_bios()))
+				// a device's own BIOS is MAME's default for it; the machine's is
+				// a setting, so each of its BIOS files is kept with its number
+				bool const root = &device == &config.root_device();
+				if (!root && ROM_GETBIOSFLAGS(rom) != 0 && ROM_GETBIOSFLAGS(rom) != device.default_bios())
 					continue;
 				needed_file f;
+				f.bios = root ? ROM_GETBIOSFLAGS(rom) : 0;
 				f.name = rom->name();
 				f.disc = ROMREGION_ISDISKDATA(region);
 				f.required = !hashes.flag(util::hash_collection::FLAG_NO_DUMP) && !ROM_ISOPTIONAL(rom);
@@ -759,6 +789,8 @@ std::vector<needed_file> audit(emu_options &options, game_driver const &driver, 
 								&& (f.required || theirs.name() == f.name))
 								f.set = ancestor.first;
 				}
+				if (!f.disc && f.required && f.set != driver.name)
+					f.in_game = in_own_set(options, driver.name, rom);
 				files.push_back(std::move(f));
 			}
 		}
@@ -798,6 +830,18 @@ std::string s_description;
 
 // what mame_describe found, for the functions that hand it out in pieces
 struct described_switch { std::string name, kind, chosen; std::vector<std::string> options; };
+// a rom set the game needs beside its own: what it is to the game, and how
+// many of the game's files are in it
+struct described_set
+{
+	std::string name, role;
+	int files = 0;
+	// the BIOS choices (as the setting spells them) with which the set is
+	// needed, when it is not needed with all of them; and whether MAME's
+	// default BIOS is one of them
+	std::vector<std::string> with_bios, without_bios;
+	bool with_default = true;
+};
 struct described
 {
 	std::string error, title, status;
@@ -807,6 +851,7 @@ struct described
 	std::vector<std::pair<std::string, std::string>> bios;   // name, description
 	std::string default_bios;
 	std::vector<described_switch> switches;
+	std::vector<described_set> firmware;
 };
 described s_desc;
 
@@ -834,12 +879,60 @@ extern "C" const char *mame_describe(void)
 			+ ",\"status\":" + json(status_text(driver, config));
 
 		// the files
-		std::vector<needed_file> const files = audit(options, driver, config);
+		u32 chosen = 0;
+		std::vector<needed_file> const every = audit(options, driver, config, chosen);
+		// the files the machine reads with the BIOS it will start with
+		std::vector<needed_file> files;
+		for (needed_file const &f : every)
+			if (f.bios == 0 || f.bios == chosen) files.push_back(f);
 		std::vector<std::string> sets;
 		for (needed_file const &f : files)
 			if (!f.disc && f.required && std::find(sets.begin(), sets.end(), f.set) == sets.end())
 				sets.push_back(f.set);
 		for (std::string const &name : sets) s_desc.sets.emplace_back(name, set_given(name));
+		// The sets the game needs beside its own: every other set that holds
+		// a file the game's own set does not. Whether that set was given does
+		// not come into it - the answer must be the same before the user
+		// provides it and after. Which BIOS the machine starts with does: a
+		// set may be needed for one BIOS's files alone, and the BIOS is a
+		// setting the user may still change, so the answer says with which.
+		std::vector<std::string> others;
+		for (needed_file const &f : every)
+			if (!f.disc && f.required && f.set != driver.name && std::find(others.begin(), others.end(), f.set) == others.end())
+				others.push_back(f.set);
+		auto const bioses = romload::entries(driver.rom).get_system_bioses();
+		for (std::string const &name : others)
+		{
+			described_set other;
+			other.name = name;
+			int always = 0;
+			for (needed_file const &f : every)
+			{
+				if (f.disc || !f.required || f.set != name || f.in_game) continue;
+				if (f.bios == 0) always++;
+				if (f.bios == 0 || f.bios == chosen) other.files++;
+			}
+			if (always == 0)
+			{
+				// needed only for the files of some of the BIOSes
+				for (romload::system_bios const &choice : bioses)
+				{
+					bool need = false;
+					for (needed_file const &f : every)
+						need = need || (!f.disc && f.required && f.set == name && !f.in_game && f.bios == choice.get_value());
+					(need ? other.with_bios : other.without_bios).emplace_back(choice.get_description());
+					if (choice.get_value() == config.root_device().default_bios()) other.with_default = need;
+				}
+				if (other.with_bios.empty()) continue;
+				if (other.without_bios.empty()) other.with_bios.clear();   // every BIOS: no condition
+			}
+			int const at = driver_list::find(name.c_str());
+			bool parent = false;
+			for (int up = driver_list::find(driver.parent); up >= 0; up = driver_list::find(driver_list::driver(up).parent))
+				parent = parent || name == driver_list::driver(up).name;
+			other.role = at >= 0 && (driver_list::driver(at).flags & MACHINE_IS_BIOS_ROOT) ? "bios" : parent ? "parent" : "device";
+			s_desc.firmware.push_back(std::move(other));
+		}
 		s_desc.files = files.size();
 		out += ",\"sets\":[";
 		for (size_t i = 0; i < sets.size(); i++)
@@ -920,10 +1013,25 @@ extern "C" const char *mame_describe(void)
 
 // The description in words: the game, what MAME says of it, the sets it reads
 // from, and every file that is missing or wrong with the set it belongs in.
-extern "C" const char *mame_report(void)
+// For the New Project window (wizard), the other sets the game needs are not
+// reported as missing when they have not been given yet: its Firmware page
+// asks for them next, and the note says so.
+static const char *report(bool wizard)
 {
 	static std::string out;
 	if (!s_desc.error.empty()) return (out = s_desc.error).c_str();
+	// a set the Firmware page is still to ask for
+	auto const awaited = [wizard] (std::string const &name)
+	{
+		if (!wizard || set_given(name)) return false;
+		for (described_set const &set : s_desc.firmware)
+			if (set.name == name) return true;
+		return false;
+	};
+	std::vector<needed_file const *> problems;
+	for (needed_file const &f : s_desc.problems)
+		if (f.disc || !awaited(f.set)) problems.push_back(&f);
+
 	out = s_desc.title + ".";
 	if (!s_desc.status.empty()) out += " MAME's notes: " + s_desc.status + ".";
 	if (s_desc.files == 0)
@@ -932,6 +1040,7 @@ extern "C" const char *mame_report(void)
 	{
 		out += " It reads " + std::to_string(s_desc.files) + " files from";
 		bool first = true;
+		std::string later;
 		for (auto const &set : s_desc.sets)
 		{
 			// a set that was not given and is not missed: its files are in
@@ -939,28 +1048,35 @@ extern "C" const char *mame_report(void)
 			bool missed = false;
 			for (needed_file const &f : s_desc.problems) missed = missed || f.set == set.first;
 			if (!set.second && !missed) continue;
-			out += std::string(first ? "" : ",") + " " + set.first + ".zip" + (set.second ? "" : " (NOT GIVEN)");
+			if (awaited(set.first)) later += (later.empty() ? "" : ", ") + set.first + ".zip";
+			out += std::string(first ? "" : ",") + " " + set.first + ".zip" + (set.second || awaited(set.first) ? "" : " (NOT GIVEN)");
 			first = false;
 		}
 		out += ".";
+		if (!later.empty())
+			out += " The Firmware page asks for " + later + ".";
 	}
-	if (s_desc.problems.empty())
+	if (problems.empty())
 	{
-		if (s_desc.files) out += " All of them were found.";
+		if (s_desc.files) out += wizard && problems.size() != s_desc.problems.size()
+			? " Every file of the game's own set was found." : " All of them were found.";
 	}
 	else
 	{
-		out += " " + std::to_string(s_desc.problems.size()) + (s_desc.problems.size() == 1 ? " file is" : " files are") + " missing or wrong:";
+		out += " " + std::to_string(problems.size()) + (problems.size() == 1 ? " file is" : " files are") + " missing or wrong:";
 		size_t shown = 0;
-		for (needed_file const &f : s_desc.problems)
+		for (needed_file const *f : problems)
 		{
-			if (++shown > 12) { out += " ... and " + std::to_string(s_desc.problems.size() - 12) + " more"; break; }
-			out += std::string(shown > 1 ? ";" : "") + " " + f.name + (f.disc ? ".chd (a disc image)" : " (in " + f.set + ".zip)") + " - " + f.problem;
+			if (++shown > 12) { out += " ... and " + std::to_string(problems.size() - 12) + " more"; break; }
+			out += std::string(shown > 1 ? ";" : "") + " " + f->name + (f->disc ? ".chd (a disc image)" : " (in " + f->set + ".zip)") + " - " + f->problem;
 		}
 		out += ".";
 	}
 	return out.c_str();
 }
+
+extern "C" const char *mame_report(void) { return report(false); }
+extern "C" const char *mame_report_for_wizard(void) { return report(true); }
 
 extern "C" int mame_problem_count(void) { return s_desc.error.empty() ? int(s_desc.problems.size()) : 1; }
 
@@ -991,6 +1107,39 @@ extern "C" const char *mame_game_settings(void)
 		out += "],\"default\":" + json(sw.chosen) + ",\"description\":"
 			+ json(std::string(sw.kind == "dip" ? "A dip switch of this game's board" : "A configuration switch of this machine")
 				+ ": '" + sw.name + "'. The game reads it as part of the machine, so a movie needs the same value to play back. The default is MAME's.") + "}";
+	}
+	return (out += "]").c_str();
+}
+
+// The rom sets the game needs beside its own, as Chimera firmware
+// declarations: its board's BIOS set, its parent's set if it is a clone, the
+// sets of the devices it uses. The id is the file MAME looks for
+// ("neogeo.zip"), which is the name Chimera mounts it under.
+extern "C" const char *mame_game_firmware(void)
+{
+	static std::string out;
+	out = "[";
+	for (described_set const &set : s_desc.firmware)
+	{
+		std::string const file = set.name + ".zip";
+		std::string const what = set.role == "bios" ? "the BIOS of this game's board"
+			: set.role == "parent" ? "the set this game is a version of"
+			: "a device this game's board has";
+		out += out.size() > 1 ? "," : "";
+		out += "{\"id\":" + json(file) + ",\"display\":" + json(file) + ",\"name\":" + json(file)
+			+ ",\"description\":" + json("MAME's rom set " + set.name + ": " + what + ". This game reads files from it that its own set does not hold. It is a .zip, with the files of the MAME version this core is built from.");
+		if (!set.with_bios.empty())
+		{
+			// needed with some BIOS choices only. A project that leaves the
+			// BIOS setting alone has MAME's default, and no value to test: so
+			// the condition names the choices on the other side of the default.
+			std::vector<std::string> const &listed = set.with_default ? set.without_bios : set.with_bios;
+			std::string in;
+			for (std::string const &choice : listed) in += (in.empty() ? "" : ",") + json(choice);
+			std::string const test = "{\"setting\":\"bios\",\"in\":[" + in + "]}";
+			out += ",\"requiredWhen\":" + (set.with_default ? "{\"not\":" + test + "}" : test);
+		}
+		out += "}";
 	}
 	return (out += "]").c_str();
 }

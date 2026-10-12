@@ -182,6 +182,7 @@ def main():
         "romFile": "romset",
         "deterministic": True,
         "suggestSettings": True,
+        "gameFirmware": True,
         "memoryLayoutMiB": [2048, 8, 8, 64, 2048],
         "_memoryLayoutMiB_note": "sbrk, sealed, invisible, plain, mmap. This is room, not use: memory is taken as a machine touches it. MAME holds a game's ROMs in memory whole, and some boards' are hundreds of megabytes; a small board's savestate is 5 to 50 MB.",
         "video": {

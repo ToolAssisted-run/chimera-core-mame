@@ -31,8 +31,13 @@ const char *mame_describe(void);
 // and a way to give one of them a value before mame_init (0 when the game has
 // that setting and that value).
 const char *mame_report(void);
+// the same for the New Project window: sets its Firmware page will ask for
+// are named as such, not reported as missing
+const char *mame_report_for_wizard(void);
 int mame_problem_count(void);
 const char *mame_game_settings(void);
+// the rom sets the game needs beside its own, as Chimera firmware declarations
+const char *mame_game_firmware(void);
 int mame_game_setting_count(void);
 const char *mame_game_setting_key(int index);
 int mame_apply_game_setting(const char *key, const char *value);

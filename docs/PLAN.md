@@ -86,8 +86,7 @@ upstream. The pin moves to 0.290 when it is released.
 
 ### Which game
 
-The first file in the Rom set slot names the machine: `sfiii3.zip` is
-`sfiii3`. A name MAME does not know is a load error that offers the closest
+The file in the Rom set slot names the machine: `sfiii3.zip` is `sfiii3`. A name MAME does not know is a load error that offers the closest
 names (MAME's own approximate match).
 
 ### The files, and what is missing
@@ -133,10 +132,8 @@ machine has (`IsButtonActive`, `IsAxisActive`). So:
   at rest, and the range is the control's own. A dial or a trackball takes
   the axis as its movement this frame.
 
-Chimera has no way to show a game's own name for a control ("Weak Punch" for
-P1 Button 1) in the input roll. The core lists them in the note the New
-Project window shows. Showing them as column names would be a change to
-Chimera, for the owner to decide.
+Where MAME's driver has the game's own name for a control, Chimera shows it
+beside the control's name (see "Decided by the owner" below).
 
 ### Settings
 
@@ -191,7 +188,7 @@ The full build:
   and three others): what a public CI runner can run.
 
 The test script (`waterbox/run-gate.sh`), on the full build with the local
-sets: 67 passed, 0 failed, 0 skipped. For Super Street Fighter II Turbo
+sets: 73 passed, 0 failed, 0 skipped. For Super Street Fighter II Turbo
 (CPS-2), Fatal Fury 3 (Neo Geo), Shinobi (System 16A), Rampart, Crypt Killer
 (Konami GQ, a hard disk image) and Pong (no files):
 
@@ -205,8 +202,9 @@ sets: 67 passed, 0 failed, 0 skipped. For Super Street Fighter II Turbo
   set are named file by file before and at load; a BIOS setting and a dip
   switch set in the project are the machine's; the EEPROM goes out as save
   data and back in unchanged;
-- through Chimera's engine, a project of two rom sets plays a movie whose
-  coin, Start and punch change the picture; Chimera's package checks pass.
+- through Chimera's engine, a project of a rom set and its firmware plays
+  a movie whose coin, Start and punch change the picture; Chimera's package
+  checks pass.
 
 Also run by hand in the full native build, 1,200 frames with controls
 pressed at random: 1944, Daioh, Forgotten Worlds, Hippodrome, Jurassic Park
@@ -215,7 +213,10 @@ Kabuki Klash, Samurai Shodown IV and the Konami GV BIOS. Vertical games come
 out upright (Varth 224x384).
 
 The window test (`tests/run-frontend.sh`, Chimera.exe under Mono on a
-private display), 3 passed: Pong runs 300 frames in the window with no
+private display), 5 passed. Super Street Fighter II Turbo opens with
+`qsound_hle.zip` taken from Chimera's firmware store and runs as the
+headless runner runs it; with no such firmware known the project is not
+opened and the set is named. And: Pong runs 300 frames in the window with no
 files; the keys the package ships are Chimera's; Shinobi's work RAM after
 300 frames in the window is what the headless runner leaves.
 
@@ -242,11 +243,22 @@ itself), and it is two coins a credit.
 | 0005 | MAME tells the frontend of every port read, leaving out its own once-a-frame look at every port: this is how lag frames are counted. |
 | 0006 | An analog control given a value takes it as it is. MAME clamps it to the control's range, which goes wrong for a range written as signed. |
 
-## Open questions for the owner
+## Decided by the owner (2026-10-12)
 
-- Column names per game (above).
-- Whether the New Project window should refuse to create a project while the
-  core reports a missing file, or only show the report (today: only show; the
-  load then fails with the same report).
-- The system name the machines are listed under (planned: `ARCADE`,
-  "Arcade").
+- **Names of controls.** A control keeps MAME's type name as its identity
+  ("P1 Button 1"); the game's own name for it, where MAME's driver has one,
+  is a label Chimera shows beside it (hover text of the TAStudio column, the
+  key configuration). Chimera learned this for the purpose: the core's
+  `GetButtonLabel` and `GetAxisLabel` exports. MAME names controls in some
+  drivers only: the Neo Geo's buttons are A to D, Hippodrome's are Attack and
+  Jump, and the CPS-2 driver names none.
+- **Missing sets are firmware.** The project's file is the game's rom set.
+  The other sets it reads from are firmware: the core lists them for the game
+  in hand (`"gameFirmware": true`, and a `"firmware"` array in its answer to
+  the New Project window), the Firmware page asks for them, and Chimera's
+  firmware store remembers them. A set is listed when it holds a file the
+  game's own set does not; when that depends on the BIOS (a Neo Geo set that
+  carries the default BIOS), the entry carries the BIOS choices it is needed
+  with. Disc images stay files of the project: firmware is read into memory.
+- **The system name** is `ARCADE`, "Arcade".
+- **Nothing is published yet.**
