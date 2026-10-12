@@ -84,6 +84,13 @@ std::vector<control> s_buttons, s_axes;
 std::vector<int32_t> s_button_state, s_axis_state;
 int s_first_other;
 bool s_input_read;
+// the ports that hold at least one of the game's controls: a read of one of
+// these is the game looking at its controls (a port of dip switches is not)
+std::set<ioport_port *> s_control_ports;
+// a machine that is TOLD when a control changes (a callback on the field, as
+// Pong's circuit has) never reads a port for it: such a machine has no frame
+// in which it "did not read its controls", and none is counted
+bool s_controls_pushed;
 
 // a control with no type of its own
 bool is_nameless(ioport_type type)
@@ -185,6 +192,8 @@ void bind_panel(running_machine &machine)
 			if (c->fields.empty() && field.specific_name())
 				c->label = field.specific_name();
 			c->fields.push_back(&field);
+			s_control_ports.insert(port.second.get());
+			if (field.has_dynamic_write()) s_controls_pushed = true;
 		}
 	}
 }
@@ -531,6 +540,12 @@ std::string status_text(game_driver const &driver, machine_config const &config)
 }
 
 } // anonymous namespace
+
+// called by MAME at every read of a port (patch 0005)
+void chimera_port_read(ioport_port &port)
+{
+	if (!s_input_read && s_control_ports.count(&port)) s_input_read = true;
+}
 
 // MAME's output (errors, warnings) goes to stderr - it is the core's log - and
 // is kept, so a machine that will not start can say why
@@ -1006,7 +1021,7 @@ extern "C" void mame_set_axis(int i, int value)
 	if (i >= 0 && i < int(s_axis_state.size())) s_axis_state[i] = value;
 }
 
-extern "C" int mame_input_was_read(void) { return 1; }
+extern "C" int mame_input_was_read(void) { return s_input_read || s_controls_pushed ? 1 : 0; }
 
 // ---- memory ----------------------------------------------------------------
 namespace {
