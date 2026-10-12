@@ -143,6 +143,26 @@ ECL_EXPORT int Init(void)
 			return 0;
 		}
 	}
+	/* what the machine powers on remembering: the Save data slot's files */
+	char entry[512];
+	const int32_t saves = wbx_slot_count("savedata");
+	for (int32_t i = 0; i < saves; i++)
+	{
+		if (wbx_slot_name("savedata", i, entry, sizeof entry) == nullptr) continue;
+		FILE *f = fopen(entry, "rb");
+		if (!f)
+		{
+			snprintf(g_loadError, sizeof g_loadError, "the save data %s could not be read", entry);
+			return 0;
+		}
+		std::vector<uint8_t> bytes;
+		uint8_t chunk[65536];
+		for (size_t got; (got = fread(chunk, 1, sizeof chunk, f)) > 0;)
+			bytes.insert(bytes.end(), chunk, chunk + got);
+		fclose(f);
+		const char *base = strrchr(entry, '/');
+		mame_set_save_file(base ? base + 1 : entry, bytes.data(), int64_t(bytes.size()));
+	}
 	if (mame_init() != 0)
 	{
 		snprintf(g_loadError, sizeof g_loadError, "%s", mame_error());
@@ -217,10 +237,12 @@ ECL_EXPORT int GetVsyncDenominator(void) { return 1000; }
 /* the game's switches as the running machine has them, one per line */
 ECL_EXPORT const char *DescribeDips(void) { return mame_list_switches(); }
 
-ECL_EXPORT int32_t GetSaveDataFileCount(void) { return 0; }
-ECL_EXPORT const char *GetSaveDataFileName(int32_t) { return ""; }
-ECL_EXPORT int64_t GetSaveDataFileSize(int32_t) { return 0; }
-ECL_EXPORT const uint8_t *GetSaveDataFileBuffer(int32_t) { return nullptr; }
+/* The save data: what each device of the machine keeps with the power off,
+ * a file each - the form the Save data slot takes back. */
+ECL_EXPORT int32_t GetSaveDataFileCount(void) { return mame_save_count(); }
+ECL_EXPORT const char *GetSaveDataFileName(int32_t i) { return mame_save_name(i); }
+ECL_EXPORT int64_t GetSaveDataFileSize(int32_t i) { return mame_save_size(i); }
+ECL_EXPORT const uint8_t *GetSaveDataFileBuffer(int32_t i) { return mame_save_data(i); }
 
 ECL_EXPORT int GetMemoryDomainCount(void) { return mame_domain_count(); }
 ECL_EXPORT const char *GetMemoryDomainName(int i) { return mame_domain_name(i); }

@@ -91,6 +91,23 @@ compile_cxx() { # <source> <object> [extra flags]  (sh has no locals: cc_* names
 	eval "$cxx" $cxxflags -I"$here" -I"$mame/src" -Wno-suggest-override "$@" -c "$cc_src" -o "$cc_obj"
 }
 
+# the panel the package declares, as the core compiles it in (mame-driver.cpp)
+python3 - "$here/panel.txt" > "$obj/panel-list.inc.new" <<'PY'
+import os, sys
+tokens, others = [], 128
+if os.path.exists(sys.argv[1]):
+    for line in open(sys.argv[1]):
+        word = line.split()
+        if len(word) == 2 and word[0] in ("button", "axis"):
+            tokens.append(word[1])
+        elif len(word) == 2 and word[0] == "others":
+            others = int(word[1])
+print("// written by build-core.sh from waterbox/panel.txt")
+print("static const char *const kPanelList[] = {%s nullptr };" % "".join(' "%s",' % t for t in tokens))
+print("constexpr int kPanelOthers = %d;" % others)
+PY
+if cmp -s "$obj/panel-list.inc" "$obj/panel-list.inc.new"; then rm -f "$obj/panel-list.inc.new"; else mv "$obj/panel-list.inc.new" "$obj/panel-list.inc"; fi
+
 objs=""
 # MAME's OSD interface pieces the emulator core calls (input sequences, the
 # network handler base, audio info) - the rest of MAME's OSD layer is not used
@@ -102,7 +119,7 @@ compile_cxx "$mdir/generated/mame/$sub/drivlist.cpp" "$obj/drivlist.o"
 # MAME's own check of a machine's files (its frontend's, the one file of it
 # this core uses)
 compile_cxx "$mame/src/frontend/mame/audit.cpp" "$obj/audit.o" -I"$mame/src/frontend/mame"
-compile_cxx "$here/mame-driver.cpp" "$obj/mame-driver.o"
+compile_cxx "$here/mame-driver.cpp" "$obj/mame-driver.o" -I"$obj"
 compile_cxx "$here/emulator-info.cpp" "$obj/emulator-info.o"
 compile_cxx "$here/wbx-entry.cpp" "$obj/wbx-entry.o" $shim $guestinc
 # MAME runs on a libco cothread, and that stack must come from mmap with

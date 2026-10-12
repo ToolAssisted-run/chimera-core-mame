@@ -82,6 +82,16 @@ const char *mame_domain_name(int index);
 uint8_t *mame_domain_ptr(int index);
 int64_t mame_domain_size(int index);
 
+// What the machine keeps with the power off (EEPROMs, battery-backed RAM),
+// one file a device, named by the device ("eeprom.nv"). mame_set_save_file,
+// before mame_init, gives a file back to its device; mame_save_count takes
+// the files as they are now, and the three after it read that list.
+void mame_set_save_file(const char *name, const uint8_t *data, int64_t size);
+int mame_save_count(void);
+const char *mame_save_name(int index);
+int64_t mame_save_size(int index);
+const uint8_t *mame_save_data(int index);
+
 // Each processor's address space, as the game addresses it: its name
 // ("maincpu"), its size in bytes, the (address, length) pairs of its RAM
 // ended by a pair of zeroes, and reads and writes by address.

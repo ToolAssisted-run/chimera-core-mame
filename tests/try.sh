@@ -3,16 +3,20 @@
 # tests/roms-local) the way the sandbox mounts them, and runs the native
 # reference on it. The first set names the game.
 #
-# Usage: tests/try.sh [-g] [-k <settings json>] "<set> [<set>...]" [run options]
-#   -g   the sandbox build (build/guest-dev) and not the reference
+# Usage: tests/try.sh [-g] [-k <settings json>] [-d <folder>] "<set> [<set>...]" [run options]
+#   -g   the sandbox build and not the reference
+#   -a   the full build (every arcade machine) and not the small one
+#   -d   a folder of save data files (*.nv) the machine starts with
 set -eu
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
-flavor="native"; settings="{}"
-while getopts "gk:" opt; do
+flavor="native"; settings="{}"; saves=""; tail="-dev"
+while getopts "gak:d:" opt; do
 	case "$opt" in
 		g) flavor="guest" ;;
+		a) tail="" ;;
 		k) settings="$OPTARG" ;;
+		d) saves="$OPTARG" ;;
 		*) exit 2 ;;
 	esac
 done
@@ -26,11 +30,19 @@ for s in $sets; do
 	done
 done
 [ -n "$list" ] || list="\"${sets%% *}.zip\""
-printf '{"romset":[%s]}' "$list" > "$work/slots"
+savelist=""
+if [ -n "$saves" ]; then
+	for f in "$saves"/*.nv; do
+		[ -f "$f" ] && { cp "$f" "$work/"; savelist="$savelist${savelist:+,}\"$(basename "$f")\""; }
+	done
+fi
+printf '{"romset":[%s],"savedata":[%s]}' "$list" "$savelist" > "$work/slots"
 printf '%s' "$settings" > "$work/settings"
 echo "work folder: $work" >&2
 if [ "$flavor" = native ]; then
-	"$root/build/native-dev/run-native" "$work" "$@"
-else
+	"$root/build/native$tail/run-native" "$work" "$@"
+elif [ -n "$tail" ]; then
 	"$root/build/guest-dev/run-wbx" "$root/build/guest-dev/core.wbx" "$work" "$@"
+else
+	"$root/waterbox/bin/run-wbx" "$root/waterbox/bin/core.wbx" "$work" "$@"
 fi

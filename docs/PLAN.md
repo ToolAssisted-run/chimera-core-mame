@@ -165,35 +165,57 @@ Chimera, for the owner to decide.
 |---|---|---|---|
 | 1 | A small build (24 driver files, `-s dev`) and the frontend: a game boots, picture, sound, controls | Pong with no files; games from the local folder; a coin gives a credit | done 2026-10-12 |
 | 2 | The same in the sandbox | The reference and the sandbox give the same digest, frame by frame | done 2026-10-12 |
-| 3 | The missing-file check, per-game settings, BIOS and parent sets | A set with a file taken out names that file before the machine starts | works by hand; tests to write |
-| 4 | The full build, both flavors | Time, size, memory measured; the walk over every machine | not started |
-| 5 | The package: controls from the database, Chimera's package checks, a project opened in the window | The test script and the window test | not started |
-| 6 | CHD games, hard disks, NVRAM as save data | Crypt Killer (a CHD is in the local folder) | CHD and hard disk done; NVRAM not |
+| 3 | The missing-file check, per-game settings, BIOS and parent sets | A set with a file taken out names that file before the machine starts | done 2026-10-12 |
+| 4 | The full build, both flavors | Time, size, memory measured; the walk over every machine | done 2026-10-12 |
+| 5 | The package: controls from the database, Chimera's package checks, a project run by Chimera's engine | The test script | done 2026-10-12; the window test is not written |
+| 6 | CHD games, hard disks, NVRAM as save data | Crypt Killer (a CHD is in the local folder) | done 2026-10-12 |
 | 7 | Speed: the recompiler's x86-64 back end in the sandbox | Frames per second measured on a 3D board | not started |
-| 8 | CI, documents, publishing | The owner's word | not started |
+| 8 | Windows, CI, documents, publishing | The owner's word for publishing | not started |
 
-## Measured (2026-10-12, the small build)
+## Measured (2026-10-12)
 
-- The small build: 24 driver files, 1,519 machines. MAME's libraries take
-  about 15 minutes natively and 35 minutes for the sandbox on 12 processors;
-  `core.wbx` is 89 MB.
-- The walk over the 1,519 machines takes a quarter of a second. Every control
-  has a place on the panel. 124 of MAME's 513 button types and 33 of its 180
-  axis types are used. One machine (a roulette table) has 213 controls with
-  no type of their own.
-- By hand, on local sets, 900 frames with controls pressed at random: the
-  reference and the sandbox give the same digests every 50 frames, a run
-  that saves and loads its state around every frame gives the same digests,
-  and so does a state reopened in a new sandbox. Super Street Fighter II
-  Turbo (CPS-2, state 14 MB), Fatal Fury 3 (Neo Geo, 49 MB), Shinobi (System
-  16A, 14 MB), Rampart (5 MB), Crypt Killer (Konami GQ, a hard disk image,
-  13 MB), and Pong with no files.
-- A coin and Start take Super Street Fighter II Turbo into a fight.
-- The missing-file check: without `qsound_hle.zip`, Super Street Fighter II
-  Turbo is refused with "dl-1425.bin (in qsound_hle.zip) - missing"; a Neo
-  Geo game asked for a BIOS that is in no given set names that BIOS file
-  and `neogeo.zip`. Four of the local sets are from older MAME versions, and
-  the check names the files MAME now expects by another name.
+The full build:
+
+- 1,775 source files given to MAME (1,766 driver files and nine that MAME's
+  dependency finder misses), 5,086 files compiled, 36,721 machines. On 14 of
+  this machine's 20 processors MAME's libraries take 21 minutes natively and
+  19 minutes for the sandbox. The build folders are 1.8 GB each.
+- `core.wbx` is 318 MB; the package is 77 MB.
+- The walk over all 36,721 machines takes under 4 seconds and none fails.
+  Every control has a place on the panel: 267 of MAME's 513 button types and
+  58 of its 180 axis types are used, and the machine with the most controls
+  of no type of their own (a roulette table) has 213. So the package
+  declares 491 controls and 58 axes. MAME marks 23,064 of the machines as not
+  working and 15,928 as having mechanical parts (fruit machines, pinball).
+- Seven machines need no files at all (Pong, Pong Doubles, Breakout, Rebound
+  and three others): what a public CI runner can run.
+
+The test script (`waterbox/run-gate.sh`), on the full build with the local
+sets: 67 passed, 0 failed, 0 skipped. For Super Street Fighter II Turbo
+(CPS-2), Fatal Fury 3 (Neo Geo), Shinobi (System 16A), Rampart, Crypt Killer
+(Konami GQ, a hard disk image) and Pong (no files):
+
+- the reference and the sandbox give the same digests every 50 frames, with
+  controls pressed at random (coins and Start among them);
+- a run that saves and loads its state around every frame gives the same
+  digests, and so does a state reopened in a new sandbox. States are 5 MB
+  (Rampart) to 49 MB (Fatal Fury 3);
+- lag frames are counted: 37 of 900 on CPS-2, 282 on the Neo Geo;
+- a coin is taken; a missing device set, a missing disc image and an empty
+  set are named file by file before and at load; a BIOS setting and a dip
+  switch set in the project are the machine's; the EEPROM goes out as save
+  data and back in unchanged;
+- through Chimera's engine, a project of two rom sets plays a movie whose
+  coin, Start and punch change the picture; Chimera's package checks pass.
+
+Also run by hand in the full native build, 1,200 frames with controls
+pressed at random: 1944, Daioh, Forgotten Worlds, Hippodrome, Jurassic Park
+(System 32), Mach Breakers, Magic Sword, Numan Athletics, Phantasm, Varth,
+Kabuki Klash, Samurai Shodown IV and the Konami GV BIOS. Vertical games come
+out upright (Varth 224x384).
+
+Crypt Killer takes no coin for its first 3,500 frames (it is testing
+itself), and it is two coins a credit.
 
 ## The patches
 
@@ -203,6 +225,8 @@ Chimera, for the owner to decide.
 | 0002 | No SDL and no host clipboard. From the X68000 core. |
 | 0003 | A frame's sound is handed over at the frame's end. From the X68000 core. |
 | 0004 | What a machine writes to its hard disk is kept in memory, as MAME's own differencing image, and not in a file beside the image. |
+| 0005 | MAME tells the frontend of every port read, leaving out its own once-a-frame look at every port: this is how lag frames are counted. |
+| 0006 | An analog control given a value takes it as it is. MAME clamps it to the control's range, which goes wrong for a range written as signed. |
 
 ## Open questions for the owner
 

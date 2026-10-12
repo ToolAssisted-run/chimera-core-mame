@@ -134,18 +134,19 @@ static int gate_parse_opts(int argc, char **argv, int first, struct gate_opts *o
 /* The widest panel the harness drives (MAME knows about a thousand controls). */
 #define GATE_MAX_BUTTONS 4096
 
-/* Is this panel control one the exercise may press: a player's, a key of the
- * keyboard or a mouse button (not a cabinet's Service/Test/Reset)? */
+/* Is this panel control one the exercise may press: a player's, a coin slot
+ * or a start button (not the cabinet's Service, Tilt or volume switches)? */
 static int gate_is_player(const struct gate_core *c, int i)
 {
 	const char *n = c->button_name(i);
 	if (!n) return 0;
+	const size_t len = strlen(n);
 	return (n[0] == 'P' && n[1] >= '1' && n[1] <= '9' && n[2] == ' ')
-		|| !strncmp(n, "Key ", 4) || !strncmp(n, "Mouse ", 6);
+		|| !strncmp(n, "Coin ", 5) || (len > 6 && !strcmp(n + len - 6, " Start"));
 }
 
 /* The exercise: an LCG picks, every 6 frames, one live control and holds it
- * for 3. Start is a player's control too, so a run that exercises long
+ * for 3. Coins and Start are among them, so a run that exercises long
  * enough also starts a game. */
 static void gate_exercise(const struct gate_core *c, long frame, uint8_t *held)
 {

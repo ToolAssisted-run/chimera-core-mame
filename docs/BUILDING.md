@@ -8,8 +8,8 @@ Chimera on Linux and on Windows.
 - GCC 13 or newer, GNU make, Python 3, git.
 - A checkout of Chimera with miniBox built, for the sandbox toolchain
   (Chimera's `AGENTS.md`, "Build").
-- About 3 GB of disk for the small build described below. The full build's
-  needs are measured in `docs/PLAN.md` when it has been done.
+- About 3 GB of disk for the small build described below, 6 GB for the
+  full one.
 
 ## MAME's source
 
@@ -29,12 +29,15 @@ MAME is never edited in place. A change to it is a numbered patch in
 
 ## Two sets of machines
 
-MAME's arcade machines are about 36,000 in 1,766 driver files, and building
-them takes hours. So there are two builds:
+MAME's arcade machines are 36,721 in 1,766 driver files. Building them takes
+about 20 minutes a flavor on 14 processors, and a public CI runner has 4. So
+there are two builds:
 
 - `-s dev`: the 24 driver files listed in `waterbox/dev-drivers.txt` (about
-  1,500 machines). About 15 minutes on 12 processors. This is the build for
-  working on the core. Its outputs go to `build/native-dev` and
+  1,500 machines). A quarter of the files to compile, and a `core.wbx` of
+  86 MB against 318 MB, so a change to the core links and packages in
+  seconds. This is the build for working on the core, and the one a CI
+  runner can afford. Its outputs go to `build/native-dev` and
   `build/guest-dev`.
 - `-s all` (the default): every arcade driver file. This is the build that
   is packaged. Its sandbox output goes to `waterbox/bin`.
@@ -54,7 +57,12 @@ Each set is built twice:
 ```sh
 waterbox/build-core.sh native -s dev      # build/native-dev/run-native
 waterbox/build-core.sh guest -s dev       # build/guest-dev/core.wbx, run-wbx
+waterbox/build-core.sh native             # build/native/run-native, every machine
+waterbox/build-package.sh -r <chimera>    # waterbox/bin/core.wbx and the package
 ```
+
+`-m <miniBox folder>` (or `MINIBOX_DIR`) says where miniBox is when it is not
+in `~/chimera/extern/chimera-common-minibox`.
 
 `build-core.sh` builds MAME's libraries first when they are missing or when
 what they were built from has changed (`build-mame.sh`), then compiles this
@@ -83,3 +91,29 @@ The first set names the game. The run options are in
 `run-native <work folder> --scan` walks every machine of the build without
 running any, and prints which controls are used and anything the control
 panel cannot hold.
+
+## The tests
+
+```sh
+CHIMERA_ROOT=<chimera> waterbox/run-gate.sh           # the full build
+CHIMERA_ROOT=<chimera> waterbox/run-gate.sh -s dev    # the small build
+```
+
+builds both flavors and the package if needed and runs every test: Pong
+(which needs no files), the database's answers, and each game whose sets are
+in `tests/roms-local`. A game whose sets are absent is reported as skipped.
+
+## The control panel
+
+The package declares the controls at least one machine has, by MAME's own
+names. The list is generated, not written:
+
+```sh
+build/native/run-native <a work folder of Pong> --scan > scan.txt
+waterbox/gen-config.py scan.txt
+```
+
+writes `waterbox/panel.txt` (which the core compiles in),
+`waterbox/waterbox.config` and `waterbox/default_keybinds.json`. Do this
+again when the MAME commit moves; the test script fails if the three files
+are not what the walk gives.

@@ -17,6 +17,8 @@ import sys
 
 # GAME_CUSTOM is what a few fruit machine files wrap GAME in
 ARCADE = re.compile(r'^\s*GAME(L|_CUSTOM)?\s*\(', re.M)
+# any machine at all: arcade, console, computer or other
+MACHINE = re.compile(r'^\s*(GAMEL?|GAME_CUSTOM|CONS|COMP|SYST)\s*\(', re.M)
 
 
 def main():
@@ -39,7 +41,26 @@ def main():
                     out.append(rel)
     if only is not None and len(out) != len(only):
         sys.exit('not arcade driver files: ' + ', '.join(sorted(only - set(out))))
-    out.sort()
+    # MAME's build finds a driver's other source files by their names: x.cpp
+    # brings x_v.cpp, x_m.cpp and x_a.cpp, and any file whose header is
+    # included. A file that is none of those is not found, and the link then
+    # fails (cave/cv1k_v_blit0.cpp and its eight siblings, which have no
+    # header of their own). So: every x_*.cpp beside a driver x.cpp that is
+    # not one of the three, has no header of its own name and declares no
+    # machine is listed too.
+    extra = []
+    for rel in out:
+        folder, name = os.path.split(os.path.join(base, rel))
+        stem = name[:-4]
+        for other in os.listdir(folder):
+            if not (other.startswith(stem + '_') and other.endswith('.cpp')):
+                continue
+            if other[len(stem):-4] in ('_v', '_m', '_a') or os.path.exists(os.path.join(folder, other[:-4] + '.h')):
+                continue
+            with open(os.path.join(folder, other), errors='replace') as f:
+                if not MACHINE.search(f.read()):
+                    extra.append(os.path.relpath(os.path.join(folder, other), base).replace(os.sep, '/'))
+    out = sorted(set(out) | set(extra))
     sys.stdout.write('\n'.join(out) + '\n')
 
 

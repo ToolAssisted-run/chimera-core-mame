@@ -21,6 +21,16 @@
         "chd"
       ],
       "help": "The CHD images of a game that has a hard disk, a CD or a laserdisc, with the file names MAME uses (for example 420uaa04.chd). The settings page names an image that is missing."
+    },
+    {
+      "id": "savedata",
+      "title": "Save data",
+      "min": 0,
+      "max": 32,
+      "formats": [
+        "nv"
+      ],
+      "help": "What the machine keeps when the power is off, in the files Export Save Data wrote: its settings, its high scores, its EEPROM. Each file is put back into the device it came from before the first frame. With none, the machine starts as it left the factory."
     }
   ]
 }

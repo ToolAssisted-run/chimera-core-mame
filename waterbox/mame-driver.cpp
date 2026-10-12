@@ -34,6 +34,9 @@
 #include "drivenum.h"
 #include "romload.h"
 #include "screen.h"
+#include "dinvram.h"
+#include "ioprocs.h"
+#include "ioprocsvec.h"
 #include "sound.h"
 #include "video.h"
 #include "ui/uimain.h"
@@ -53,6 +56,7 @@
 namespace {
 
 constexpr int kSampleRate = 48000;
+constexpr int kMaxSide = 2048;     // waterbox.config, video
 
 std::string s_game;
 std::map<std::string, std::string> s_options;
@@ -60,6 +64,11 @@ std::map<std::string, std::string> s_switches;
 std::string s_error;
 std::string s_log;          // what MAME printed as errors and warnings
 running_machine *s_machine;
+
+// why the machine may not start, found while MAME was starting it. MAME
+// catches what is thrown there and carries on, so it is kept and mame_init
+// answers with it.
+std::string s_refused;
 
 // ---- the panel -----------------------------------------------------------
 // One entry per control MAME knows: a type and a player ("P1 Button 1",
@@ -75,11 +84,13 @@ struct control
 	int player;
 	std::string label;      // what this game's driver calls it, or ""
 	std::vector<ioport_field *> fields;
-	s32 rest = 0, min = 0, max = 0;   // an axis: the port's values
+	// an axis: its rest and its two ends as the game reads them (a control
+	// whose range is signed has a negative end), and the bits of its field
+	s32 rest = 0, min = 0, max = 0;
+	u32 bits = 0;
 	bool relative = false;  // a dial or a ball: the axis is this frame's movement
 	s32 position = 0;       // where a relative control has got to
 };
-constexpr int kOtherSlots = 128;
 std::vector<control> s_buttons, s_axes;
 std::vector<int32_t> s_button_state, s_axis_state;
 int s_first_other;
@@ -98,10 +109,16 @@ bool is_nameless(ioport_type type)
 	return type == IPT_OTHER || type == IPT_KEYPAD || type == IPT_KEYBOARD;
 }
 
-void build_panel(running_machine &machine)
+// The controls the package declares (waterbox/panel.txt, written by
+// gen-config.py from a walk over every machine: the controls at least one
+// machine has). The panel is these, in MAME's order, so a control's index is
+// its place in the package's list. With no list, the panel is every control
+// MAME knows - which is what the walk itself runs with.
+#include "panel-list.inc"
+
+// every control MAME knows, in MAME's order
+void all_controls(running_machine &machine, std::vector<control> &buttons, std::vector<control> &axes)
 {
-	s_buttons.clear();
-	s_axes.clear();
 	for (input_type_entry const &entry : machine.ioport().types())
 	{
 		// MAME's own keys (pause, menus, save state) are not the machine's
@@ -113,10 +130,23 @@ void build_panel(running_machine &machine)
 		c.name = entry.name();
 		c.type = entry.type();
 		c.player = entry.player();
-		(ioport_manager::type_is_analog(entry.type()) ? s_axes : s_buttons).push_back(std::move(c));
+		(ioport_manager::type_is_analog(entry.type()) ? axes : buttons).push_back(std::move(c));
 	}
+}
+
+void build_panel(running_machine &machine)
+{
+	s_buttons.clear();
+	s_axes.clear();
+	std::vector<control> buttons, axes;
+	all_controls(machine, buttons, axes);
+	std::set<std::string> const listed(std::begin(kPanelList), std::end(kPanelList) - 1);
+	for (control &c : buttons)
+		if (listed.empty() || listed.count(c.token)) s_buttons.push_back(std::move(c));
+	for (control &c : axes)
+		if (listed.empty() || listed.count(c.token)) s_axes.push_back(std::move(c));
 	s_first_other = int(s_buttons.size());
-	for (int i = 0; i < kOtherSlots; i++)
+	for (int i = 0; i < kPanelOthers; i++)
 	{
 		control c;
 		c.token = "OTHER" + std::to_string(i + 1);
@@ -135,6 +165,42 @@ int field_shift(ioport_field const &field)
 	int shift = 0;
 	for (ioport_value mask = field.mask(); mask && !(mask & 1); mask >>= 1) shift++;
 	return shift;
+}
+
+// An analog field as the frontend drives it: where it rests, how far it goes
+// each way, and whether the axis is a position or a movement. MAME's own
+// reading of the same field is analog_field's constructor (ioport.cpp).
+struct analog_shape { s32 rest, min, max; u32 bits; bool relative; };
+analog_shape shape_of(ioport_field const &field)
+{
+	int const shift = field_shift(field);
+	analog_shape a;
+	a.bits = u32(field.mask() >> shift);
+	a.rest = s32((field.defvalue() & field.mask()) >> shift);
+	a.min = s32((field.minval() & field.mask()) >> shift);
+	a.max = s32((field.maxval() & field.mask()) >> shift);
+	a.relative = field.type() == IPT_DIAL || field.type() == IPT_DIAL_V
+		|| field.type() == IPT_TRACKBALL_X || field.type() == IPT_TRACKBALL_Y
+		|| field.type() == IPT_MOUSE_X || field.type() == IPT_MOUSE_Y;
+	if (a.relative)
+	{
+		// a counter the width of the field, going round
+		a.min = 0;
+		a.max = s32(a.bits);
+	}
+	else if (field.type() == IPT_POSITIONAL || field.type() == IPT_POSITIONAL_V)
+	{
+		// one of maxval positions
+		a.min = 0;
+		a.max = std::max<s32>(s32(field.maxval()) - 1, 0);
+	}
+	else if (a.min > a.max)
+	{
+		// written as signed: 0x80 to 0x7f is -128 to 127
+		a.min -= s32(a.bits) + 1;
+		if (a.rest > a.max) a.rest -= s32(a.bits) + 1;
+	}
+	return a;
 }
 
 // Finds the game's controls among the panel's, and takes them off MAME's own
@@ -167,15 +233,13 @@ void bind_panel(running_machine &machine)
 				c = &s_axes[at->second];
 				if (c->fields.empty())
 				{
-					int const shift = field_shift(field);
-					c->rest = s32((field.defvalue() & field.mask()) >> shift);
-					c->min = s32((field.minval() & field.mask()) >> shift);
-					c->max = s32((field.maxval() & field.mask()) >> shift);
-					c->relative = field.analog_wraps() || field.analog_reset()
-						|| field.type() == IPT_DIAL || field.type() == IPT_DIAL_V
-						|| field.type() == IPT_TRACKBALL_X || field.type() == IPT_TRACKBALL_Y
-						|| field.type() == IPT_MOUSE_X || field.type() == IPT_MOUSE_Y;
-					c->position = c->rest;
+					analog_shape const a = shape_of(field);
+					c->rest = a.rest;
+					c->min = a.min;
+					c->max = a.max;
+					c->bits = a.bits;
+					c->relative = a.relative;
+					c->position = a.rest;
 				}
 			}
 			else if (is_nameless(field.type()))
@@ -211,22 +275,15 @@ void apply_panel()
 		s32 value;
 		if (c.relative)
 		{
-			// a dial has no ends: it goes round
-			s32 const lo = std::min(c.min, c.max), hi = std::max(c.min, c.max);
-			s32 const range = hi - lo + 1;
-			c.position += s_axis_state[i];
-			if (range > 1)
-			{
-				c.position = (c.position - lo) % range;
-				if (c.position < 0) c.position += range;
-				c.position += lo;
-			}
+			// a dial has no ends: its counter goes round
+			c.position = s32(u32(c.position + s_axis_state[i]) & c.bits);
 			value = c.position;
 		}
 		else
-			value = c.rest + s_axis_state[i];
+			value = std::clamp(c.rest + s_axis_state[i], c.min, c.max);
+		// the port's bits (a negative value in two's complement)
 		for (ioport_field *field : c.fields)
-			field->set_value(ioport_value(value));
+			field->set_value(ioport_value(u32(value) & c.bits));
 	}
 }
 
@@ -258,7 +315,46 @@ void apply_switches(running_machine &machine)
 	}
 	for (auto const &kv : s_switches)
 		if (!done.count(kv.first))
-			throw emu_fatalerror("this game has no switch \"%s\" with a position \"%s\"", kv.first, kv.second);
+			s_refused = "this game has no switch \"" + kv.first + "\" with a position \"" + kv.second + "\"";
+}
+
+// ---- what the machine keeps with the power off -----------------------------
+// Every device of the machine that keeps something (an EEPROM, a battery-
+// backed RAM, a timekeeper chip) is one save data file, in the form MAME
+// itself writes to its nvram folder, named by the device: ":eeprom" is
+// eeprom.nv. MAME's own nvram files are neither read nor written.
+std::map<std::string, std::vector<uint8_t>> s_saves_in;
+struct save_file { std::string name; std::vector<uint8_t> bytes; };
+std::vector<save_file> s_saves_out;
+
+std::string save_name(device_t const &device)
+{
+	std::string name = device.tag() + 1;
+	std::replace(name.begin(), name.end(), ':', '_');
+	return name + ".nv";
+}
+
+// puts the files given back into their devices: after MAME has set every
+// device to its factory contents, before the machine is reset
+void load_saves(running_machine &machine)
+{
+	std::set<std::string> used;
+	std::string have;
+	for (device_nvram_interface &nvram : nvram_interface_enumerator(machine.root_device()))
+	{
+		std::string const name = save_name(nvram.device());
+		have += (have.empty() ? "" : ", ") + name;
+		auto const given = s_saves_in.find(name);
+		if (given == s_saves_in.end()) continue;
+		auto file = util::ram_read(given->second.data(), given->second.size());
+		if (!file || !nvram.nvram_load(*file))
+			s_refused = "the save data " + name + " could not be loaded into this machine";
+		used.insert(name);
+	}
+	for (auto const &given : s_saves_in)
+		if (!used.count(given.first))
+			s_refused = "the save data " + given.first + " is not one of this machine's ("
+				+ (have.empty() ? std::string("it keeps nothing") : "it keeps " + have) + ")";
 }
 
 // ---- what one frame leaves behind ---------------------------------------
@@ -383,6 +479,9 @@ private:
 		s32 w = 0, h = 0;
 		m_target->compute_minimum_size(w, h);
 		if (w <= 0 || h <= 0) return;
+		// the package's picture buffer is kMaxSide square: a layout larger
+		// than that is drawn smaller, in the same shape
+		while (w > kMaxSide || h > kMaxSide) { w = (w + 1) / 2; h = (h + 1) / 2; }
 		m_target->set_bounds(w, h);
 		s_video.assign(size_t(w) * h, 0);
 		s_width = w;
@@ -423,7 +522,10 @@ public:
 		// clock - sleeping between frames, and deciding by the host's time.
 		machine.video().set_throttled(false);
 	}
-	void ui_initialize(running_machine &machine) override { }
+	// MAME has given every device its factory contents (its own nvram files
+	// are off) and set the clocks; the machine is not reset yet, so what is
+	// loaded here is what it powers on with
+	void ui_initialize(running_machine &machine) override { load_saves(machine); }
 	~chimera_manager() override { delete m_ui; }
 private:
 	ui_manager *m_ui = nullptr;
@@ -477,8 +579,10 @@ void fixed_options(emu_options &o)
 	set(o, OPTION_NVRAM_SAVE, "0");
 	set(o, OPTION_READCONFIG, "0");
 	set(o, OPTION_WRITECONFIG, "0");
-	set(o, OPTION_MEDIAPATH, ".");
-	set(o, OPTION_SAMPLEPATH, ".");
+	// where the rom sets are: Chimera mounts a project's files in the
+	// sandbox's root ("/ssf2t.zip"); the test harnesses run in a work folder
+	set(o, OPTION_MEDIAPATH, "/;.");
+	set(o, OPTION_SAMPLEPATH, "/;.");
 	// both ways of a stick at once reach the game as they are: what a game
 	// does with them is the game's
 	set(o, OPTION_JOYSTICK_CONTRADICTORY, "1");
@@ -509,7 +613,8 @@ bool file_exists(std::string const &name)
 // is this set among the files given: name.zip or name.7z
 bool set_given(std::string const &name)
 {
-	return file_exists(name + ".zip") || file_exists(name + ".7z");
+	return file_exists(name + ".zip") || file_exists(name + ".7z")
+		|| file_exists("/" + name + ".zip") || file_exists("/" + name + ".7z");
 }
 
 // what MAME says of how well a machine is emulated
@@ -948,6 +1053,11 @@ extern "C" int mame_init(void)
 	s_host = co_active();
 	s_mame = co_create(16 * 1024 * 1024, mame_main);
 	co_switch(s_mame);
+	if (!s_refused.empty())
+	{
+		s_error = s_refused;
+		return 1;
+	}
 	return s_stopped ? 1 : 0;
 }
 
@@ -1012,9 +1122,8 @@ extern "C" void mame_axis_range(int i, int *min, int *max)
 	*min = *max = 0;
 	if (i < 0 || i >= int(s_axes.size()) || s_axes[i].fields.empty()) return;
 	control const &c = s_axes[i];
-	s32 const lo = std::min(c.min, c.max), hi = std::max(c.min, c.max);
-	if (c.relative) { *min = -(hi - lo); *max = hi - lo; }
-	else { *min = lo - c.rest; *max = hi - c.rest; }
+	if (c.relative) { *min = -s32(c.bits); *max = s32(c.bits); }
+	else { *min = c.min - c.rest; *max = c.max - c.rest; }
 }
 extern "C" void mame_set_axis(int i, int value)
 {
@@ -1046,6 +1155,31 @@ extern "C" int mame_domain_count(void) { find_domains(); return int(s_domains.si
 extern "C" const char *mame_domain_name(int i) { find_domains(); return i >= 0 && i < int(s_domains.size()) ? s_domains[i].name.c_str() : ""; }
 extern "C" uint8_t *mame_domain_ptr(int i) { find_domains(); return i >= 0 && i < int(s_domains.size()) ? s_domains[i].ptr : nullptr; }
 extern "C" int64_t mame_domain_size(int i) { find_domains(); return i >= 0 && i < int(s_domains.size()) ? s_domains[i].size : 0; }
+
+// ---- save data --------------------------------------------------------------
+extern "C" void mame_set_save_file(const char *name, const uint8_t *data, int64_t size)
+{
+	s_saves_in[name].assign(data, data + size);
+}
+
+extern "C" int mame_save_count(void)
+{
+	s_saves_out.clear();
+	if (!s_machine) return 0;
+	for (device_nvram_interface &nvram : nvram_interface_enumerator(s_machine->root_device()))
+	{
+		if (!nvram.nvram_can_save()) continue;
+		save_file f;
+		f.name = save_name(nvram.device());
+		util::vector_read_write_adapter<uint8_t> file(f.bytes);
+		if (nvram.nvram_save(file) && !f.bytes.empty())
+			s_saves_out.push_back(std::move(f));
+	}
+	return int(s_saves_out.size());
+}
+extern "C" const char *mame_save_name(int i) { return i >= 0 && i < int(s_saves_out.size()) ? s_saves_out[i].name.c_str() : ""; }
+extern "C" int64_t mame_save_size(int i) { return i >= 0 && i < int(s_saves_out.size()) ? int64_t(s_saves_out[i].bytes.size()) : 0; }
+extern "C" const uint8_t *mame_save_data(int i) { return i >= 0 && i < int(s_saves_out.size()) ? s_saves_out[i].bytes.data() : nullptr; }
 
 // ---- the address spaces ----------------------------------------------------
 // Each processor's program space is a bus: memory at the addresses the game
@@ -1150,10 +1284,16 @@ extern "C" const char *mame_list_switches(void)
 extern "C" void mame_scan(void)
 {
 	if (!s_machine) { std::puts("summary no machine is running"); return; }
+	// every control MAME knows, whatever the panel was built with
+	std::vector<control> all_buttons, all_axes;
+	all_controls(*s_machine, all_buttons, all_axes);
+	int const first_other = int(all_buttons.size());
 	std::map<std::pair<int, int>, int> button_at, axis_at;
-	for (int i = 0; i < s_first_other; i++) button_at[{ int(s_buttons[i].type), s_buttons[i].player }] = i;
-	for (int i = 0; i < int(s_axes.size()); i++) axis_at[{ int(s_axes[i].type), s_axes[i].player }] = i;
-	std::vector<int> button_used(s_buttons.size()), axis_used(s_axes.size());
+	for (int i = 0; i < first_other; i++) button_at[{ int(all_buttons[i].type), all_buttons[i].player }] = i;
+	for (int i = 0; i < int(all_axes.size()); i++) axis_at[{ int(all_axes[i].type), all_axes[i].player }] = i;
+	std::vector<int> button_used(all_buttons.size()), axis_used(all_axes.size());
+	// the widest an axis is asked to go over all machines, from its rest
+	std::vector<s32> axis_lo(all_axes.size()), axis_hi(all_axes.size());
 	size_t machines = 0, failed = 0, unplaced = 0, most_other = 0, with_axes = 0, odd_range = 0, not_working = 0, mechanical = 0;
 	std::string most_other_name;
 	for (size_t at = 0; at < driver_list::total(); at++)
@@ -1200,6 +1340,11 @@ extern "C" void mame_scan(void)
 						axis_used[found->second]++;
 						axes = true;
 						if (field.minval() > field.maxval()) odd_range++;
+						analog_shape const a = shape_of(field);
+						bool const relative = a.relative;
+						s32 const lo = a.min, hi = a.max, rest = a.rest;
+						axis_lo[found->second] = std::min(axis_lo[found->second], relative ? -(hi - lo) : lo - rest);
+						axis_hi[found->second] = std::max(axis_hi[found->second], relative ? hi - lo : hi - rest);
 					}
 					else if (is_nameless(field.type()))
 						other++;
@@ -1221,10 +1366,10 @@ extern "C" void mame_scan(void)
 		}
 	}
 	size_t buttons = 0, axes = 0;
-	for (int i = 0; i < s_first_other; i++)
-		if (button_used[i]) { buttons++; std::printf("used %s\t%s\t%d\n", s_buttons[i].token.c_str(), s_buttons[i].name.c_str(), button_used[i]); }
-	for (size_t i = 0; i < s_axes.size(); i++)
-		if (axis_used[i]) { axes++; std::printf("usedaxis %s\t%s\t%d\n", s_axes[i].token.c_str(), s_axes[i].name.c_str(), axis_used[i]); }
+	for (int i = 0; i < first_other; i++)
+		if (button_used[i]) { buttons++; std::printf("used %s\t%s\t%d\tP%d\n", all_buttons[i].token.c_str(), all_buttons[i].name.c_str(), button_used[i], all_buttons[i].player + 1); }
+	for (size_t i = 0; i < all_axes.size(); i++)
+		if (axis_used[i]) { axes++; std::printf("usedaxis %s\t%s\t%d\tP%d\t%d\t%d\n", all_axes[i].token.c_str(), all_axes[i].name.c_str(), axis_used[i], all_axes[i].player + 1, axis_lo[i], axis_hi[i]); }
 	std::printf("summary machines %zu failed %zu notworking %zu mechanical %zu buttons %zu of %d axes %zu of %zu unplaced %zu mostother %zu (%s) withaxes %zu minovermax %zu\n",
-		machines, failed, not_working, mechanical, buttons, s_first_other, axes, s_axes.size(), unplaced, most_other, most_other_name.c_str(), with_axes, odd_range);
+		machines, failed, not_working, mechanical, buttons, first_other, axes, all_axes.size(), unplaced, most_other, most_other_name.c_str(), with_axes, odd_range);
 }

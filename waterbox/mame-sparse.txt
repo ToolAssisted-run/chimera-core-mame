@@ -16,4 +16,3 @@
 !/3rdparty/SDL3/
 !/3rdparty/portaudio/
 !/3rdparty/portmidi/
-!/3rdparty/glm/
