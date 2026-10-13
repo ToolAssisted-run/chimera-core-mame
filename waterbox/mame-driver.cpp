@@ -89,6 +89,11 @@ struct control
 	// whose range is signed has a negative end), and the bits of its field
 	s32 rest = 0, min = 0, max = 0;
 	u32 bits = 0;
+	// the range the package declares for the axis, which is the frontend's:
+	// the widest a control of this kind goes over every machine (panel.txt).
+	// Both zero when the build has no list - the walk that writes one.
+	s32 wire_lo = 0, wire_hi = 0;
+	s32 written = 0;        // what the machine was last given
 	bool relative = false;  // a dial or a ball: the axis is this frame's movement
 	s32 position = 0;       // where a relative control has got to
 };
@@ -146,6 +151,9 @@ void build_panel(running_machine &machine)
 		if (listed.empty() || listed.count(c.token)) s_buttons.push_back(std::move(c));
 	for (control &c : axes)
 		if (listed.empty() || listed.count(c.token)) s_axes.push_back(std::move(c));
+	for (control &c : s_axes)
+		for (panel_axis const *a = kPanelAxes; a->token; a++)
+			if (c.token == a->token) { c.wire_lo = a->lo; c.wire_hi = a->hi; }
 	s_first_other = int(s_buttons.size());
 	for (int i = 0; i < kPanelOthers; i++)
 	{
@@ -276,6 +284,38 @@ void bind_panel(running_machine &machine)
 }
 
 // this frame's controls, into the ports
+// An axis, from the frontend's range to this machine's.
+//
+// The package declares one range for each kind of axis - "P1 Lightgun X" is
+// -32768 to 32767 - because it is declared once for 36,000 machines, and that
+// range is the widest any of them has. The frontend moves a control over the
+// declared range: the mouse across the picture is the gun axis from one end to
+// the other. A machine's own range is nearly always narrower (a gun that
+// counts 0 to 255), and adding the frontend's number to the machine's rest ran
+// off the end of it at once - the gun could only ever point at the edges of
+// the screen (chimera issue 263), and a stick was at full lock for anything
+// past a twitch. So the number is scaled:
+//  - a light gun is a place on the screen: the declared range is the screen
+//    from edge to edge, and so is the machine's;
+//  - any other lever rests where the machine rests it, and goes as far each
+//    way as the machine's does when the frontend's is at its end.
+// A dial, a ball or a mouse is this frame's movement in the machine's own
+// counts and is not scaled (apply_panel).
+s32 from_wire(control const &c, s32 v)
+{
+	if (c.wire_hi <= c.wire_lo)
+		return std::clamp(c.rest + v, c.min, c.max);
+	v = std::clamp(v, c.wire_lo, c.wire_hi);
+	if (c.type == IPT_LIGHTGUN_X || c.type == IPT_LIGHTGUN_Y)
+	{
+		s64 const span = s64(c.wire_hi) - c.wire_lo + 1;
+		return c.min + s32((s64(v) - c.wire_lo) * (s64(c.max) - c.min + 1) / span);
+	}
+	if (v >= 0)
+		return c.wire_hi > 0 ? c.rest + s32(s64(v) * (c.max - c.rest) / c.wire_hi) : c.rest;
+	return c.wire_lo < 0 ? c.rest - s32(s64(v) * (c.rest - c.min) / c.wire_lo) : c.rest;
+}
+
 void apply_panel()
 {
 	for (size_t i = 0; i < s_buttons.size(); i++)
@@ -293,7 +333,8 @@ void apply_panel()
 			value = c.position;
 		}
 		else
-			value = std::clamp(c.rest + s_axis_state[i], c.min, c.max);
+			value = from_wire(c, s_axis_state[i]);
+		c.written = value;
 		// the port's bits (a negative value in two's complement)
 		for (ioport_field *field : c.fields)
 			field->set_value(ioport_value(u32(value) & c.bits));
@@ -1274,6 +1315,30 @@ extern "C" void mame_axis_range(int i, int *min, int *max)
 	if (c.relative) { *min = -s32(c.bits); *max = s32(c.bits); }
 	else { *min = c.min - c.rest; *max = c.max - c.rest; }
 }
+// The axes this machine has, each on a line, for a test to read: the range
+// the package declares, the machine's own, and what the machine is given
+// when the frontend's axis is at its low end, at half of it, at rest, at
+// half of its high end and at its high end.
+extern "C" const char *mame_describe_axes(void)
+{
+	static std::string text;
+	text.clear();
+	for (size_t i = 0; i < s_axes.size(); i++)
+	{
+		control const &c = s_axes[i];
+		if (c.fields.empty()) continue;
+		char line[320];
+		if (c.relative)
+			std::snprintf(line, sizeof line, "axis %zu %s movement\n", i, c.token.c_str());
+		else
+			std::snprintf(line, sizeof line, "axis %zu %s declared %d %d machine %d %d %d gives %d %d %d %d %d\n", i, c.token.c_str(),
+				c.wire_lo, c.wire_hi, c.min, c.rest, c.max,
+				from_wire(c, c.wire_lo), from_wire(c, c.wire_lo / 2), from_wire(c, 0), from_wire(c, c.wire_hi / 2), from_wire(c, c.wire_hi));
+		text += line;
+	}
+	return text.c_str();
+}
+
 extern "C" void mame_set_axis(int i, int value)
 {
 	if (i >= 0 && i < int(s_axis_state.size())) s_axis_state[i] = value;

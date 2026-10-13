@@ -61,9 +61,12 @@ Chimera shows it beside the control's name: in the hover text of its
 TAStudio column and in the key configuration. Many drivers name none.
 
 An analog control (a paddle, a pedal, a light gun, an analog stick) is an
-axis: its value is added to the control's rest position and reaches the game
-as it is, with no sensitivity setting and no smoothing. A dial, a trackball
-or a mouse takes the value as its movement this frame.
+axis. Each axis has one range for every game, the one Chimera shows, and the
+core fits it to the game: a light gun's range is the screen from edge to
+edge, and any other control rests where the game rests it and reaches the
+game's own end when the axis is at its end. There is no sensitivity setting
+and no smoothing. A dial, a trackball or a mouse takes the value as its
+movement this frame, in the game's own counts.
 
 Lag frames are counted: a frame in which the game read none of its controls.
 

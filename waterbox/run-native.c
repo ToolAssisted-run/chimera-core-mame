@@ -24,6 +24,7 @@ extern int IsButtonActive(int32_t index);
 extern const char *GetButtonName(int32_t index);
 extern int GetButtonCount(void);
 extern const char *DescribeDips(void);
+extern const char *DescribeAxes(void);
 extern int32_t GetSaveDataFileCount(void);
 extern const char *GetSaveDataFileName(int32_t i);
 extern int64_t GetSaveDataFileSize(int32_t i);
@@ -102,6 +103,7 @@ int main(int argc, char **argv)
 		.button_active = IsButtonActive,
 		.button_name = GetButtonName,
 		.describe = DescribeDips,
+		.describe_axes = DescribeAxes,
 		.frame = frame,
 		.input_was_read = InputWasRead,
 		.axis_count = GetAxisCount,

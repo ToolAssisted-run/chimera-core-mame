@@ -94,17 +94,23 @@ compile_cxx() { # <source> <object> [extra flags]  (sh has no locals: cc_* names
 # the panel the package declares, as the core compiles it in (mame-driver.cpp)
 python3 - "$here/panel.txt" > "$obj/panel-list.inc.new" <<'PY'
 import os, sys
-tokens, others = [], 128
+tokens, ranges, others = [], [], 128
 if os.path.exists(sys.argv[1]):
     for line in open(sys.argv[1]):
         word = line.split()
-        if len(word) == 2 and word[0] in ("button", "axis"):
+        if len(word) == 2 and word[0] == "button":
             tokens.append(word[1])
+        elif len(word) == 4 and word[0] == "axis":
+            tokens.append(word[1])
+            ranges.append((word[1], int(word[2]), int(word[3])))
         elif len(word) == 2 and word[0] == "others":
             others = int(word[1])
 print("// written by build-core.sh from waterbox/panel.txt")
 print("static const char *const kPanelList[] = {%s nullptr };" % "".join(' "%s",' % t for t in tokens))
 print("constexpr int kPanelOthers = %d;" % others)
+# the range the package declares for each axis, which is the frontend's
+print("struct panel_axis { const char *token; int lo, hi; };")
+print("static const panel_axis kPanelAxes[] = {%s { nullptr, 0, 0 } };" % "".join(' { "%s", %d, %d },' % r for r in ranges))
 PY
 if cmp -s "$obj/panel-list.inc" "$obj/panel-list.inc.new"; then rm -f "$obj/panel-list.inc.new"; else mv "$obj/panel-list.inc.new" "$obj/panel-list.inc"; fi
 

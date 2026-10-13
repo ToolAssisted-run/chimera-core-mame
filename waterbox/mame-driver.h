@@ -73,6 +73,8 @@ const char *mame_axis_token(int index);
 int mame_axis_active(int index);
 // what the axis may be given: the control's own range around its rest at 0
 void mame_axis_range(int index, int *min, int *max);
+// the machine's axes and what each end of the declared range gives it (a test reads this)
+const char *mame_describe_axes(void);
 void mame_set_axis(int index, int value);
 // The game's own name for a control it has ("Weak Punch"), or "".
 const char *mame_button_label(int index);

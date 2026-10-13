@@ -262,3 +262,51 @@ itself), and it is two coins a credit.
   with. Disc images stay files of the project: firmware is read into memory.
 - **The system name** is `ARCADE`, "Arcade".
 - **Nothing is published yet.**
+
+## An axis is fitted to the game (2026-10-13, chimera issue 263)
+
+Reported with a light gun game: the aim only reached the corners of the
+screen.
+
+An axis is declared once for all 36,721 machines, so its declared range is
+the widest any of them has: "P1 Lightgun X" is -32768 to 32767. Chimera
+moves a control over the declared range - the mouse across the picture is
+the gun axis from one end to the other. The core added that number to the
+machine's rest and clamped it to the machine's own range, which is nearly
+always far narrower: Crypt Killer's gun counts 125 to 444 across and 0 to
+239 down, so anything past a hundredth of the picture from the middle was
+already at the edge. A paddle or an analog stick had the same fault: full
+lock for anything past a twitch.
+
+The number is now scaled (`from_wire` in waterbox/mame-driver.cpp). A light
+gun is a place on the screen: the declared range is the screen from edge to
+edge, and so is the machine's. Any other lever rests where the machine rests
+it and reaches the machine's end when the declared range is at its end. A
+dial, a trackball and a mouse are movement in the machine's own counts and
+are not scaled. The declared range of each axis is compiled in from
+waterbox/panel.txt, which gen-config.py now writes with it.
+
+A movie made before this holds numbers that meant something else; the core
+was a day old.
+
+**Tests.** `--list-axes` (the core's own runners) prints, for each axis of
+the game, the declared range, the machine's, and what the machine is given
+at the ends, at rest and half way. Two checks read it: Pong's paddle, with
+no files needed, and Crypt Killer's guns where the set is present. Fed a
+line as the old code would have printed it (half way giving the same as the
+end), the check fails. The Pong check that the paddle moves now sends 20000
+of 32767 where it sent 60 of the machine's 255.
+
+**Measured**: the whole test script, 74 passed, 1 failed, 0 skipped. The one
+that failed is Chimera's package checks, which could not start on this
+computer from inside the script (it found the wrong .NET); run by hand they
+pass, 18 of 18. Crypt Killer's guns: 125, 205, 285, 364, 444 across for the
+declared range's low end, a quarter, the middle, three quarters and the high
+end; 0, 60, 120, 179, 239 down.
+
+**Not proved**: the game in the report (Time Crisis 2 is the reporter's
+example for another request; the gun game they tried is not named), and the
+aim seen with a mouse in Chimera's window. Each axis keeps the declared
+range the walk over all machines gave it, so two players' guns have
+different declared ranges (-32768 to 32767 for the first, -1168 to 1169 for
+the second); each is fitted to the screen all the same.

@@ -66,6 +66,7 @@ static intfn_i g_IsAxisActive;
 static setfn g_SetAxis;
 static intfn g_GetAxisCount;
 static ptrfn g_DescribeDips;
+static ptrfn g_DescribeAxes;
 static i32fn g_SaveCount;
 static ptrfn_i32 g_SaveName, g_SaveBuffer;
 static i64fn_i32 g_SaveSize;
@@ -107,6 +108,7 @@ static void core_set_axis(int32_t i, int32_t v) { g_SetAxis(i, v); }
 static int core_button_active(int32_t i) { return g_IsButtonActive(i); }
 static const char *core_button_name(int32_t i) { return (const char *)g_GetButtonName(i); }
 static const char *core_describe(void) { return (const char *)g_DescribeDips(); }
+static const char *core_describe_axes(void) { return (const char *)g_DescribeAxes(); }
 static int core_save_count(void) { return g_SaveCount(); }
 static const char *core_save_name(int i) { return (const char *)g_SaveName(i); }
 static int64_t core_save_size(int i) { return g_SaveSize(i); }
@@ -223,6 +225,7 @@ static void resolve_exports(void)
 	g_SetAxis = (setfn)proc(g_host, "SetAxis");
 	g_GetAxisCount = (intfn)proc(g_host, "GetAxisCount");
 	g_DescribeDips = (ptrfn)proc(g_host, "DescribeDips");
+	g_DescribeAxes = (ptrfn)proc(g_host, "DescribeAxes");
 	g_SaveCount = (i32fn)proc(g_host, "GetSaveDataFileCount");
 	g_SaveName = (ptrfn_i32)proc(g_host, "GetSaveDataFileName");
 	g_SaveSize = (i64fn_i32)proc(g_host, "GetSaveDataFileSize");
@@ -280,6 +283,7 @@ int main(int argc, char **argv)
 		.button_active = core_button_active,
 		.button_name = core_button_name,
 		.describe = core_describe,
+		.describe_axes = core_describe_axes,
 		.frame = core_frame,
 		.input_was_read = core_input_was_read,
 		.axis_count = core_axis_count,

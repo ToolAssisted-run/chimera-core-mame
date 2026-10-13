@@ -12,6 +12,8 @@
  *                              player controls (never Reset/Test/Service)
  *          --list-panel        print the panel, and which controls are live
  *          --list-dips         print the game's dip switches and their values
+ *          --list-axes         print the game's axes: the declared range, the
+ *                              machine's own, and what its ends give the machine
  *          --dump-domain NAME FILE   write a memory domain after the run
  *          --vid-out FILE      the last picture: "W H\n" then BGRA rows
  *          --savedata-out DIR  the game's save data after the run, a file each
@@ -35,6 +37,7 @@ struct gate_core
 	int (*button_active)(int32_t index);
 	const char *(*button_name)(int32_t index);
 	const char *(*describe)(void);   /* the game's dip switches, one per line */
+	const char *(*describe_axes)(void); /* the game's axes, one per line, or NULL */
 	void (*frame)(void);
 	int (*input_was_read)(void);
 	int (*axis_count)(void);
@@ -65,6 +68,7 @@ struct gate_opts
 	int exercise;
 	int listPanel;
 	int listDips;
+	int listAxes;
 	const char *dumpDomain, *dumpPath;
 	const char *vidOut;
 	const char *savedataOut;
@@ -117,6 +121,7 @@ static int gate_parse_opts(int argc, char **argv, int first, struct gate_opts *o
 		else if (!strcmp(argv[i], "--exercise")) o->exercise = 1;
 		else if (!strcmp(argv[i], "--list-panel")) o->listPanel = 1;
 		else if (!strcmp(argv[i], "--list-dips")) o->listDips = 1;
+		else if (!strcmp(argv[i], "--list-axes")) o->listAxes = 1;
 		else if (!strcmp(argv[i], "--dump-domain") && i + 2 < argc) { o->dumpDomain = argv[++i]; o->dumpPath = argv[++i]; }
 		else if (!strcmp(argv[i], "--vid-out") && i + 1 < argc) o->vidOut = argv[++i];
 		else if (!strcmp(argv[i], "--savedata-out") && i + 1 < argc) o->savedataOut = argv[++i];
@@ -192,6 +197,8 @@ static int gate_run(const struct gate_core *c, const struct gate_opts *o)
 	}
 	if (o->listDips && c->describe)
 		fputs(c->describe(), stdout);
+	if (o->listAxes && c->describe_axes)
+		fputs(c->describe_axes(), stdout);
 	uint8_t held[GATE_MAX_BUTTONS] = {0};
 	long lag = 0;
 	for (long f = 1; f <= o->frames; f++)

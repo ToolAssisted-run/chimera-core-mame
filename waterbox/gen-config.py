@@ -170,8 +170,10 @@ def main():
         for b in buttons:
             f.write("button %s\n" % b["token"])
         f.write("others %d\n" % others)
+        # an axis with the range the package declares for it: the core turns a
+        # value in that range into the running machine's own (mame-driver.cpp)
         for a in axes:
-            f.write("axis %s\n" % a["token"])
+            f.write("axis %s %d %d\n" % (a["token"], a["lo"], a["hi"]))
 
     config = {
         "coreName": "MAME",

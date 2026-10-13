@@ -208,7 +208,9 @@ if [ -z "$coin" ]; then
 	finish
 fi
 paddle="$(awk '$1=="axis" && $3=="active" {print $2; exit}' "$work/pong.panel")"
-pong="--frames 900 --report 50 --press $coin:100:5 --axis $paddle:60:300:200"
+# (the paddle's number is in the range the package declares, -32768 to 32767,
+# which the core scales to the machine's own: 20000 is most of the way across)
+pong="--frames 900 --report 50 --press $coin:100:5 --axis $paddle:20000:300:200"
 "$native" "$work/pong" $pong > "$work/pong.n" 2> "$work/pong.n.err" || true
 "$wbxrun" "$core" "$work/pong" $pong --vid-out "$work/pong.raw" > "$work/pong.w" 2> "$work/pong.w.err" || true
 "$wbxrun" "$core" "$work/pong" $pong --rerecord > "$work/pong.r" 2> "$work/pong.r.err" || true
@@ -222,6 +224,39 @@ check "pong: saving and loading around every frame changes nothing" "" same "$wo
 check "pong: a state reopened in a new sandbox goes on the same" "" same "$work/pong.w" "$work/pong.s"
 check "pong: a coin starts a game (a run without one differs)" "" differ "$work/pong.idle" "$work/pong.still"
 check "pong: the paddle moves (a run with it still differs)" "" differ "$work/pong.still" "$work/pong.w"
+# An axis is declared once for every machine, with the widest range any of
+# them has; the core turns the frontend's number into this machine's. Held
+# for each of the game's axes that is a position (not a dial's movement): the
+# declared range's ends give the machine's own ends, never more; its middle
+# gives the machine's rest or, for a gun, the middle of the screen; and half
+# way gives half way. Before this the number was added to the machine's
+# rest, and a gun could only point at the edges of the screen (chimera issue
+# 263): half of the declared range gave the same as all of it.
+axes_right() { # <a file of --list-axes lines>
+	python3 - "$1" <<'PY'
+import sys
+seen = 0
+for line in open(sys.argv[1]):
+    w = line.split()
+    if len(w) < 4 or w[0] != "axis" or w[3] != "declared":
+        continue
+    lo, hi, mn, rest, mx = int(w[4]), int(w[5]), int(w[7]), int(w[8]), int(w[9])
+    a, b, c, d, e = (int(x) for x in w[11:16])
+    name = w[2]
+    assert hi > lo, f"{name}: no declared range"
+    assert mn <= a <= b <= c <= d <= e <= mx, f"{name}: {a} {b} {c} {d} {e} is not in order inside {mn}..{mx}"
+    assert e == mx, f"{name}: the high end gives {e}, the machine's is {mx}"
+    assert lo >= 0 or a == mn, f"{name}: the low end gives {a}, the machine's is {mn}"
+    assert abs(2 * d - (c + e)) <= 2, f"{name}: half way up gives {d}, between {c} and {e}"
+    assert "LIGHTGUN" in name or c == rest, f"{name}: at rest it gives {c}, the machine rests at {rest}"
+    seen += 1
+assert seen, "the machine has no axis that is a position"
+print(f"{seen} axes")
+PY
+}
+"$wbxrun" "$core" "$work/pong" --frames 1 --list-axes > "$work/pong.axes" 2> /dev/null || true
+check "pong: the paddle's declared range is the machine's own, end to end" "$(grep -m1 ' declared ' "$work/pong.axes" | cut -d' ' -f3-)" \
+	axes_right "$work/pong.axes"
 # the picture is not one colour
 if python3 -c "
 import sys
@@ -419,6 +454,9 @@ fi
 if game cryptklr "Crypt Killer (Konami GQ, a hard disk image)" 3600 cryptklr.zip 420uaa04.chd; then
 	lag cryptklr
 	# what the machine writes to its disk stays in memory: no file appears
+	"$wbxrun" "$core" "$work/cryptklr" --frames 1 --list-axes > "$work/cryptklr.axes" 2> /dev/null || true
+	check "cryptklr: the guns' declared range is the screen, edge to edge" "$(grep -m1 'LIGHTGUN_X declared' "$work/cryptklr.axes" | cut -d' ' -f3-)" \
+		axes_right "$work/cryptklr.axes"
 	check "cryptklr: nothing is written beside the disk image" "" \
 		sh -c "[ ! -e '$work/cryptklr/diff' ] && [ \"\$(ls '$work/cryptklr' | wc -l)\" = 4 ]"
 	folder cryptklr-nodisk '{}' cryptklr.zip

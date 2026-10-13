@@ -241,6 +241,8 @@ ECL_EXPORT int GetVsyncDenominator(void) { return 1000; }
 
 /* the game's switches as the running machine has them, one per line */
 ECL_EXPORT const char *DescribeDips(void) { return mame_list_switches(); }
+// for the core's own tests: the game's axes and what the declared range gives each
+ECL_EXPORT const char *DescribeAxes(void) { return mame_describe_axes(); }
 
 /* The save data: what each device of the machine keeps with the power off,
  * a file each - the form the Save data slot takes back. */
