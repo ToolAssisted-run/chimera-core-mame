@@ -59,13 +59,13 @@ AXIS_SHORT = {
 # what the first two players' common controls are bound to out of the box
 # the digit keys by the names Chimera hands to bindings (Number1, not D1)
 KEYS = {
-    "P1 Up": "Up, J1 POV1U, X1 DpadUp, X1 LStickUp", "P1 Down": "Down, J1 POV1D, X1 DpadDown, X1 LStickDown",
-    "P1 Left": "Left, J1 POV1L, X1 DpadLeft, X1 LStickLeft", "P1 Right": "Right, J1 POV1R, X1 DpadRight, X1 LStickRight",
+    "P1 Up": "Up, J1 POV0U, X1 DpadUp, X1 LStickUp", "P1 Down": "Down, J1 POV0D, X1 DpadDown, X1 LStickDown",
+    "P1 Left": "Left, J1 POV0L, X1 DpadLeft, X1 LStickLeft", "P1 Right": "Right, J1 POV0R, X1 DpadRight, X1 LStickRight",
     "P1 Button 1": "Z, J1 B1, X1 X", "P1 Button 2": "X, J1 B2, X1 A", "P1 Button 3": "C, J1 B3, X1 B",
     "P1 Button 4": "A, J1 B4, X1 Y", "P1 Button 5": "S, J1 B5, X1 LeftShoulder", "P1 Button 6": "D, J1 B6, X1 RightShoulder",
     "1 Player Start": "Number1, J1 B10, X1 Start", "Coin 1": "Number5, J1 B9, X1 Back",
-    "P2 Up": "J2 POV1U, X2 DpadUp, X2 LStickUp", "P2 Down": "J2 POV1D, X2 DpadDown, X2 LStickDown",
-    "P2 Left": "J2 POV1L, X2 DpadLeft, X2 LStickLeft", "P2 Right": "J2 POV1R, X2 DpadRight, X2 LStickRight",
+    "P2 Up": "J2 POV0U, X2 DpadUp, X2 LStickUp", "P2 Down": "J2 POV0D, X2 DpadDown, X2 LStickDown",
+    "P2 Left": "J2 POV0L, X2 DpadLeft, X2 LStickLeft", "P2 Right": "J2 POV0R, X2 DpadRight, X2 LStickRight",
     "P2 Button 1": "J2 B1, X2 X", "P2 Button 2": "J2 B2, X2 A", "P2 Button 3": "J2 B3, X2 B",
     "P2 Button 4": "J2 B4, X2 Y", "P2 Button 5": "J2 B5, X2 LeftShoulder", "P2 Button 6": "J2 B6, X2 RightShoulder",
     "2 Players Start": "Number2, J2 B10, X2 Start", "Coin 2": "Number6, J2 B9, X2 Back",
