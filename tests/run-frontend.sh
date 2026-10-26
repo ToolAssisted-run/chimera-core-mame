@@ -56,6 +56,27 @@ runner="$chimera_root/build/meson-linux/chimera-run"
 [ -x "$bin/run-wbx" ] || { echo "the sandbox build is not there: $bin/run-wbx" >&2; exit 1; }
 
 work="$(mktemp -d)"
+# A game runs only in a project (Chimera, 2026-10-26): crun_game <package>
+# <game> <movie> [chimera-run's options] makes one of the game and the movie,
+# with any --settings and --firmware given, and runs it with the rest.
+crun_game() {
+	local pkg="$1" game="$2" movie="$3" made=() run=() dir
+	shift 3
+	while [ $# -gt 0 ]; do
+		case "$1" in
+			--settings) made+=("$1" "$2"); shift ;;
+			--settings=*) made+=(--settings "${1#--settings=}") ;;
+			--firmware) made+=("$1" "$2"); run+=("$1" "$2"); shift ;;
+			--firmware=*) made+=(--firmware "${1#--firmware=}"); run+=(--firmware "${1#--firmware=}") ;;
+			*) run+=("$1") ;;
+		esac
+		shift
+	done
+	dir="$(mktemp -d "$work/project.XXXXXX")"
+	"$runner" --new-project "$dir/game.chimeraProject" "$pkg" "$game" "$movie" "${made[@]}" > "$dir/make.log" 2>&1 \
+		|| { echo "chimera-run: no project made: $(tail -1 "$dir/make.log")" >&2; return 2; }
+	"$runner" --project "$dir/game.chimeraProject" "$pkg" --files "$(dirname "$game")" "${run[@]}"
+}
 # Pong's "rom set": the machine needs no files, but a project is opened by
 # one, and its name says which machine
 python3 -c "
@@ -150,7 +171,7 @@ if [ ! -f "$roms/shinobi.zip" ] || [ ! -x "$runner" ]; then
 else
 	cp "$roms/shinobi.zip" "$work/shinobi.zip"
 	: > "$work/empty.movie"
-	"$runner" "$package" "$work/shinobi.zip" "$work/empty.movie" --frames "$frames" --record "$work/rec.txt" \
+	crun_game "$package" "$work/shinobi.zip" "$work/empty.movie" --frames "$frames" --record "$work/rec.txt" \
 		--dump "nvram=$work/engine.ram.bin" > "$work/engine.log" 2>&1
 	if ! run_frontend shinobi "$work/config.base.ini" "$frames" nvram "$work/shinobi.zip"; then
 		report "window:memory" FAIL "Chimera did not finish the run: $(value shinobi detail) $(tail -2 "$work/shinobi.log" | tr '\n' ' ' | cut -c1-200)"
@@ -180,7 +201,7 @@ else
 		report "window:refusal" FAIL "refused, but the set is not named: $(tail -2 "$work/ssf2tnofw.log" | tr '\n' ' ' | cut -c1-200)"
 	fi
 	: > "$work/empty.movie"
-	"$runner" "$package" "$work/ssf2t.zip" "$work/empty.movie" --frames "$frames" --record "$work/rec2.txt" \
+	crun_game "$package" "$work/ssf2t.zip" "$work/empty.movie" --frames "$frames" --record "$work/rec2.txt" \
 		--firmware "qsound_hle.zip=$fwdir/qsound_hle.zip" --dump "gfxram=$work/engine2.ram.bin" > "$work/engine2.log" 2>&1
 	python3 "$here/settings-config.py" "$config" "$work/config.fw.ini" '{}' "{\"qsound_hle.zip\": \"$fwdir/qsound_hle.zip\"}"
 	if ! run_frontend ssf2t "$work/config.fw.ini" "$frames" gfxram "$work/ssf2t.zip" "$fwdir/qsound_hle.zip"; then

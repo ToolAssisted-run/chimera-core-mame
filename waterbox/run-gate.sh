@@ -44,6 +44,28 @@ case "$set_" in
 esac
 
 work="$root/build/gate$tail"
+# A game runs only in a project (Chimera, 2026-10-26): crun_game <package>
+# <game> <movie> [chimera-run's options] makes one of the game and the movie,
+# with any --settings and --firmware given, and runs it with the rest.
+crun_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+crun_game() {
+	cg_pkg="$1" cg_game="$2" cg_movie="$3" cg_made=""
+	shift 3
+	cg_n=$#
+	while [ "$cg_n" -gt 0 ]; do
+		case "$1" in
+			--settings) cg_made="$cg_made --settings $(crun_quote "$2")"; shift 2; cg_n=$((cg_n - 2)); continue ;;
+			--settings=*) cg_made="$cg_made --settings $(crun_quote "${1#--settings=}")"; shift; cg_n=$((cg_n - 1)); continue ;;
+			--firmware) cg_made="$cg_made --firmware $(crun_quote "$2")"; set -- "$@" "$1" "$2"; shift 2; cg_n=$((cg_n - 2)); continue ;;
+			--firmware=*) cg_made="$cg_made --firmware $(crun_quote "${1#--firmware=}")"; set -- "$@" "$1"; shift; cg_n=$((cg_n - 1)); continue ;;
+		esac
+		set -- "$@" "$1"; shift; cg_n=$((cg_n - 1))
+	done
+	cg_dir="$(mktemp -d "$work/project.XXXXXX")"
+	eval "\"\$run\" --new-project \"\$cg_dir/game.chimeraProject\" \"\$cg_pkg\" \"\$cg_game\" \"\$cg_movie\" $cg_made" \
+		> "$cg_dir/make.log" 2>&1 || { echo "chimera-run: no project made: $(tail -1 "$cg_dir/make.log")" >&2; return 2; }
+	"$run" --project "$cg_dir/game.chimeraProject" "$cg_pkg" --files "$(dirname "$cg_game")" "$@"
+}
 rm -rf "$work"; mkdir -p "$work"
 native="$root/build/native$tail/run-native"
 wbxrun="$bin/run-wbx"
@@ -432,7 +454,7 @@ PY
 	# MAME's Neo Geo driver calls the four buttons A, B, C and D.
 	if [ -x "$run" ] && [ -f "$pkg" ]; then
 		: > "$work/empty.movie"
-		"$run" "$pkg" "$roms/fatfury3.zip" "$work/empty.movie" --frames 1 --record "$work/fatfury3.rec" --meta "$work/fatfury3.meta" > "$work/fatfury3.engine" 2>&1 || true
+		crun_game "$pkg" "$roms/fatfury3.zip" "$work/empty.movie" --frames 1 --record "$work/fatfury3.rec" --meta "$work/fatfury3.meta" > "$work/fatfury3.engine" 2>&1 || true
 		check "fatfury3: the game's own names for its controls reach Chimera" "$(grep '^label=P[12] Button' "$work/fatfury3.meta" 2> /dev/null | cut -c7- | tr '\n' ' ')" \
 			sh -c "grep -qx 'label=P1 Button 1=A' '$work/fatfury3.meta' && grep -qx 'label=P2 Button 4=D' '$work/fatfury3.meta' && ! grep -q '^label=P1 Up=' '$work/fatfury3.meta'"
 	else
@@ -473,9 +495,13 @@ if [ -x "$run" ] && [ -f "$pkg" ]; then
 import sys, zipfile
 zipfile.ZipFile(sys.argv[1], 'w').close()" "$work/pong.zip"
 	: > "$work/empty.movie"
-	"$run" "$pkg" "$work/pong.zip" "$work/empty.movie" --frames 300 --record "$work/pong.rec" > "$work/pong.engine" 2>&1 || true
+	crun_game "$pkg" "$work/pong.zip" "$work/empty.movie" --frames 300 --record "$work/pong.rec" > "$work/pong.engine" 2>&1 || true
 	check "pong: runs in Chimera's engine" "300 frames" grep -q '^frames=300' "$work/pong.engine"
-	"$run" "$pkg" "$work/pong.zip" --suggest > "$work/pong.engine.suggest" 2>&1 || true
+	# asked of a project of the game, as the New Project window asks (a game
+	# runs only in a project, Chimera 2026-10-26)
+	sdir="$(mktemp -d "$work/project.XXXXXX")"
+	"$run" --new-project "$sdir/pong.chimeraProject" "$pkg" "$work/pong.zip" > "$sdir/make.log" 2>&1 \
+		&& "$run" --project "$sdir/pong.chimeraProject" "$pkg" --files "$work" --suggest > "$work/pong.engine.suggest" 2>&1 || true
 	check "pong: the engine gets the database's answer" "" grep -q "This machine needs no files" "$work/pong.engine.suggest"
 else
 	report SKIP "pong: runs in Chimera's engine" "no chimera-run at $run, or no package"
