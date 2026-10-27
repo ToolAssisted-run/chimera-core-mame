@@ -1,6 +1,6 @@
 #!/bin/bash
-# The window test: the package loaded by Chimera itself (Chimera.exe under
-# Mono, on a private Xvfb display, with nobody at it), not by its headless
+# The window test: the package loaded by Chimera itself (Chimera's
+# window, run headless, with nobody at it), not by its headless
 # runner. Three things are asked:
 #  - Pong, which needs no files, runs in the window: Chimera takes the
 #    package as the arcade core, the machine runs the frames asked for, and
@@ -20,7 +20,7 @@
 #
 # Usage: tests/run-frontend.sh --chimera-root <chimera checkout> [--frames N] [-s dev] [--keep]
 #   --keep   leave the work folder (logs, configurations, projects) and say where it is
-# Needs: mono, Xvfb, Chimera built with its window (dotnet build), and the
+# Needs: Chimera built with its window (its tools/ci-chimera.sh), and the
 # package installed in that checkout (waterbox/build-package.sh -r <chimera>;
 # -s dev for the small build's).
 set -u
@@ -47,11 +47,11 @@ done
 chimera_root="$(cd "$chimera_root" && pwd)"
 roms="${MAME_ROMS:-$here/roms-local}"
 
-emu_exe="$chimera_root/build/Chimera.exe"
+chimera_exe="$chimera_root/build/meson-linux/source/ui/chimera"
 package="$chimera_root/build/Cores/mame.chimeraCore"
 if [ -n "$tail" ]; then bin="$root/build/guest-dev"; else bin="$wb/bin"; fi
 runner="$chimera_root/build/meson-linux/chimera-run"
-[ -f "$emu_exe" ] || { echo "Chimera's window is not built: $emu_exe" >&2; exit 1; }
+[ -x "$chimera_exe" ] || { echo "Chimera's window is not built: $chimera_exe" >&2; exit 1; }
 [ -f "$package" ] || { echo "the package is not installed: $package (run waterbox/build-package.sh -r $chimera_root)" >&2; exit 1; }
 [ -x "$bin/run-wbx" ] || { echo "the sandbox build is not there: $bin/run-wbx" >&2; exit 1; }
 
@@ -82,30 +82,19 @@ crun_game() {
 python3 -c "
 import sys, zipfile
 zipfile.ZipFile(sys.argv[1], 'w').close()" "$work/pong.zip"
-xvfb_pid=""
 cleanup() {
-	[ -n "$xvfb_pid" ] && kill "$xvfb_pid" 2>/dev/null
 	if [ -n "$keep" ]; then echo "work folder kept: $work"; else rm -rf "$work"; fi
 }
 trap cleanup EXIT
 
+# Chimera's window, run headless (it needs no display): the cores installed in
+# the checkout, its settings, cache and recovery files the run's own, and
+# nothing carried over from a Chimera installed on this machine
+# the native test runner (run-wbx) needs miniBox's library, which Chimera's build holds
 export LD_LIBRARY_PATH="$chimera_root/build/dll:$chimera_root/build:/usr/lib/x86_64-linux-gnu"
-export MONO_CRASH_NOFILE=1 MONO_WINFORMS_XIM_STYLE=disabled ALSOFT_DRIVERS=null
-# always a display of this test's own: nobody's desktop is drawn on
-command -v Xvfb >/dev/null || { echo "Xvfb not found (apt install xvfb)" >&2; exit 1; }
-for n in 90 91 92 93 94 95 96; do
-	if [ ! -e "/tmp/.X11-unix/X$n" ]; then
-		Xvfb ":$n" -screen 0 640x480x24 -nolisten tcp > /dev/null 2>&1 & xvfb_pid=$!
-		export DISPLAY=":$n"; break
-	fi
-done
-[ -n "$xvfb_pid" ] || { echo "no free display number for Xvfb" >&2; exit 1; }
-sleep 1
+export ALSOFT_DRIVERS=null CHIMERA_CORES_DIR="$chimera_root/build/Cores" CHIMERA_QT_CACHE="$work/qt-cache" CHIMERA_QT_RECOVERY="$work/qt-recovery" \
+	CHIMERA_QT_HASHES="$work/qt-file-hashes.txt" CHIMERA_QT_CHIMERA_SETTINGS="$work/no-chimera-config.ini"
 
-config="$work/config.ini"
-( cd "$chimera_root" && timeout 120 mono "$emu_exe" --headless "--config=$config" "--lua=$here/exit.lua" ) > "$work/bootstrap.log" 2>&1
-[ -f "$config" ] || { echo "Chimera did not write a configuration:"; tail -5 "$work/bootstrap.log"; exit 1; } >&2
-sed -i 's/"DispMethod": [0-9]/"DispMethod": 1/' "$config"
 
 ok=0
 failed=0
@@ -140,14 +129,14 @@ run_frontend() {
 		echo "shot="
 		echo "domain=$domain"
 	} > "$job"
-	( cd "$chimera_root" && MINIHAWK_JOB="$job" timeout 900 mono "$emu_exe" --headless \
-		"--config=$cfg" "--project=$dir/$tag.chimeraProject" "--lua=$here/frontend-ram.lua" ) >> "$work/$tag.log" 2>&1
+	( cd "$chimera_root" && MINIHAWK_JOB="$job" timeout -s KILL 900 "$chimera_exe" --headless \
+		"--config=$cfg" "--project=$dir/$tag.chimeraProject" "--lua=$here/${lua_script:-frontend-ram.lua}" ) >> "$work/$tag.log" 2>&1
 	[ -f "$work/$tag.meta.txt" ] && grep -q "^status=OK" "$work/$tag.meta.txt"
 }
 value() { sed -n "s/^$2=//p" "$work/$1.meta.txt" 2>/dev/null; }
 
-python3 "$here/settings-config.py" "$config" "$work/config.base.ini" '{}'
-if ! run_frontend pong "$work/config.base.ini" "$frames" "" "$work/pong.zip"; then
+python3 "$here/settings-config.py" "$work/settings.base.json" '{}'
+if ! run_frontend pong "$work/settings.base.json" "$frames" "" "$work/pong.zip"; then
 	report "window:pong" FAIL "Chimera did not finish the run: $(value pong detail) $(tail -2 "$work/pong.log" | tr '\n' ' ' | cut -c1-200)"
 elif [ "$(value pong frames)" = "$frames" ] && [ "$(value pong width)" = 1552 ] && [ "$(value pong height)" = 240 ]; then
 	report "window:pong" PASS "Pong ran $frames frames in Chimera's window as the arcade core, with no files; its picture is 1552x240"
@@ -155,9 +144,8 @@ else
 	report "window:pong" FAIL "frames $(value pong frames) of $frames, picture $(value pong width)x$(value pong height) and not 1552x240"
 fi
 
-python3 "$here/forget-controller.py" "$work/config.base.ini" "$work/config.keys.ini" "Arcade Panel"
-if run_frontend keys "$work/config.keys.ini" 1 "" "$work/pong.zip"; then
-	if python3 "$here/check-keybinds.py" "$work/config.keys.ini" "$wb/default_keybinds.json" "Arcade Panel" "Coin 1" > "$work/keys.txt" 2>&1; then
+if lua_script=dump-controls.lua run_frontend keys "$work/settings.keys.json" 1 "" "$work/pong.zip"; then
+	if python3 "$here/check-keybinds.py" "$work/keys.ram.bin" "$wb/default_keybinds.json" "Arcade Panel" "Coin 1" > "$work/keys.txt" 2>&1; then
 		report "window:keys" PASS "$(cat "$work/keys.txt")"
 	else
 		report "window:keys" FAIL "$(head -1 "$work/keys.txt")"
@@ -173,7 +161,7 @@ else
 	: > "$work/empty.movie"
 	crun_game "$package" "$work/shinobi.zip" "$work/empty.movie" --frames "$frames" --record "$work/rec.txt" \
 		--dump "nvram=$work/engine.ram.bin" > "$work/engine.log" 2>&1
-	if ! run_frontend shinobi "$work/config.base.ini" "$frames" nvram "$work/shinobi.zip"; then
+	if ! run_frontend shinobi "$work/settings.base.json" "$frames" nvram "$work/shinobi.zip"; then
 		report "window:memory" FAIL "Chimera did not finish the run: $(value shinobi detail) $(tail -2 "$work/shinobi.log" | tr '\n' ' ' | cut -c1-200)"
 	elif [ -s "$work/engine.ram.bin" ] && cmp -s "$work/engine.ram.bin" "$work/shinobi.ram.bin"; then
 		report "window:memory" PASS "Shinobi after $frames frames in the window: its work RAM ($(wc -c < "$work/shinobi.ram.bin") bytes) is what the headless runner leaves"
@@ -191,7 +179,7 @@ else
 	cp "$roms/ssf2t.zip" "$work/ssf2t.zip"
 	cp "$roms/qsound_hle.zip" "$fwdir/qsound_hle.zip"
 	# first, with no firmware known to Chimera: refused, with the set's name
-	if run_frontend ssf2tnofw "$work/config.base.ini" 1 "" "$work/ssf2t.zip" "$fwdir/qsound_hle.zip"; then
+	if run_frontend ssf2tnofw "$work/settings.base.json" 1 "" "$work/ssf2t.zip" "$fwdir/qsound_hle.zip"; then
 		report "window:refusal" FAIL "the project opened without qsound_hle.zip"
 	elif grep -q "qsound_hle.zip" "$work/ssf2tnofw.log"; then
 		# Chimera's own check of the project's firmware comes first: the set
@@ -203,8 +191,8 @@ else
 	: > "$work/empty.movie"
 	crun_game "$package" "$work/ssf2t.zip" "$work/empty.movie" --frames "$frames" --record "$work/rec2.txt" \
 		--firmware "qsound_hle.zip=$fwdir/qsound_hle.zip" --dump "gfxram=$work/engine2.ram.bin" > "$work/engine2.log" 2>&1
-	python3 "$here/settings-config.py" "$config" "$work/config.fw.ini" '{}' "{\"qsound_hle.zip\": \"$fwdir/qsound_hle.zip\"}"
-	if ! run_frontend ssf2t "$work/config.fw.ini" "$frames" gfxram "$work/ssf2t.zip" "$fwdir/qsound_hle.zip"; then
+	python3 "$here/settings-config.py" "$work/settings.fw.json" '{}' "{\"qsound_hle.zip\": \"$fwdir/qsound_hle.zip\"}"
+	if ! run_frontend ssf2t "$work/settings.fw.json" "$frames" gfxram "$work/ssf2t.zip" "$fwdir/qsound_hle.zip"; then
 		report "window:firmware" FAIL "Chimera did not finish the run: $(value ssf2t detail) $(tail -2 "$work/ssf2t.log" | tr '\n' ' ' | cut -c1-200)"
 	elif [ -s "$work/engine2.ram.bin" ] && cmp -s "$work/engine2.ram.bin" "$work/ssf2t.ram.bin"; then
 		report "window:firmware" PASS "Super Street Fighter II Turbo opened with qsound_hle.zip from Chimera's firmware: after $frames frames its video RAM ($(wc -c < "$work/ssf2t.ram.bin") bytes) is what the headless runner leaves"
