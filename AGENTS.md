@@ -52,7 +52,7 @@ waterbox/build-package.sh -r <chimera> && bash tests/run-frontend.sh --chimera-r
 
 Run the test script before every commit that touches what it covers, and say
 in the commit what ran, with the numbers. Chimera's own package checks need
-`dotnet` on the PATH.
+Chimera built with its window (`<chimera>/build/meson-linux/source/ui/test-packages`).
 
 ## Rules
 

@@ -212,8 +212,8 @@ pressed at random: 1944, Daioh, Forgotten Worlds, Hippodrome, Jurassic Park
 Kabuki Klash, Samurai Shodown IV and the Konami GV BIOS. Vertical games come
 out upright (Varth 224x384).
 
-The window test (`tests/run-frontend.sh`, Chimera.exe under Mono on a
-private display), 5 passed. Super Street Fighter II Turbo opens with
+The window test (`tests/run-frontend.sh`, Chimera's window, run
+headless), 5 passed. Super Street Fighter II Turbo opens with
 `qsound_hle.zip` taken from Chimera's firmware store and runs as the
 headless runner runs it; with no such firmware known the project is not
 opened and the set is named. And: Pong runs 300 frames in the window with no
@@ -299,7 +299,7 @@ of 32767 where it sent 60 of the machine's 255.
 
 **Measured**: the whole test script, 74 passed, 1 failed, 0 skipped. The one
 that failed is Chimera's package checks, which could not start on this
-computer from inside the script (it found the wrong .NET); run by hand they
+computer from inside the script (it found the wrong test runner); run by hand they
 pass, 18 of 18. Crypt Killer's guns: 125, 205, 285, 364, 444 across for the
 declared range's low end, a quarter, the middle, three quarters and the high
 end; 0, 60, 120, 179, 239 down.
@@ -320,6 +320,6 @@ DistinctKeyNameOverrides gives it ("Number1", "Enter", "Backtick",
 reads the left and right Shift, Ctrl and Alt as one key each, "Shift", "Ctrl"
 and "Alt" (Input.cs, Config.MergeLAndRModifierKeys). A default binding to
 another name never fired, so those controls shipped unbound on the keyboard.
-Checked on Xvfb: with 1, Return, left Shift and Up held, Chimera reports
+Checked on a virtual display: with 1, Return, left Shift and Up held, Chimera reports
 Number1, Enter, Shift and Up. Left and right names stay beside the merged one,
 for a setup with the merging off.

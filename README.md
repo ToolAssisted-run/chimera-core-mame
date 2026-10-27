@@ -107,7 +107,7 @@ in memory and is part of a savestate; the disc image is never changed.
 ## Using it in Chimera
 
 Chimera ships no cores and downloads nothing. Put the `.chimeraCore` package
-in the `Cores` folder beside `Chimera.exe`; File > Core Manager lists it. The
+in the `cores` folder beside Chimera's program; Tools > Core Manager... lists it. The
 same file works on Linux and on Windows.
 
 ## Building
