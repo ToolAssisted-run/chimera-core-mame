@@ -54,6 +54,15 @@
 #include <string>
 #include <vector>
 
+/* A text a person reads is a key of languages/en.json (chimera
+ * docs/translations.md): each of its arguments after a TEXT_ARG; a reason put
+ * inside another text separates its own with TEXT_INNER; a report of several
+ * texts puts TEXT_LINE before each. Each is a string of its own so the byte
+ * after it is never read as more of its hex. */
+#define TEXT_ARG "\x1f"
+#define TEXT_INNER "\x1e"
+#define TEXT_LINE "\x1d"
+
 namespace {
 
 constexpr int kSampleRate = 48000;
@@ -369,7 +378,7 @@ void apply_switches(running_machine &machine)
 	}
 	for (auto const &kv : s_switches)
 		if (!done.count(kv.first))
-			s_refused = "this game has no switch \"" + kv.first + "\" with a position \"" + kv.second + "\"";
+			s_refused = "error.no_switch_position" TEXT_ARG + kv.first + TEXT_ARG + kv.second;
 }
 
 // ---- what the machine keeps with the power off -----------------------------
@@ -402,13 +411,13 @@ void load_saves(running_machine &machine)
 		if (given == s_saves_in.end()) continue;
 		auto file = util::ram_read(given->second.data(), given->second.size());
 		if (!file || !nvram.nvram_load(*file))
-			s_refused = "the save data " + name + " could not be loaded into this machine";
+			s_refused = "error.save_not_loaded" TEXT_ARG + name;
 		used.insert(name);
 	}
 	for (auto const &given : s_saves_in)
 		if (!used.count(given.first))
-			s_refused = "the save data " + given.first + " is not one of this machine's ("
-				+ (have.empty() ? std::string("it keeps nothing") : "it keeps " + have) + ")";
+			s_refused = have.empty() ? "error.save_not_kept_none" TEXT_ARG + given.first
+				: "error.save_not_kept" TEXT_ARG + given.first + TEXT_ARG + have;
 }
 
 // ---- what one frame leaves behind ---------------------------------------
@@ -599,7 +608,7 @@ void mame_main()
 		s_machine = &machine;
 		int const result = machine.run(false);
 		if (s_error.empty())
-			s_error = "the machine stopped (MAME exit code " + std::to_string(result) + ")";
+			s_error = "error.mame_exit" TEXT_ARG + std::to_string(result);
 	}
 	catch (emu_fatalerror const &e)
 	{
@@ -610,7 +619,7 @@ void mame_main()
 		s_error = e.what();
 	}
 	if (!s_log.empty())
-		s_error += "\n" + s_log;
+		s_error += TEXT_LINE + s_log;
 	s_machine = nullptr;
 	s_stopped = true;
 	for (;;) co_switch(s_host);
@@ -619,7 +628,7 @@ void mame_main()
 void set(core_options &opts, const char *name, std::string const &value)
 {
 	if (!opts.get_entry(name))
-		throw std::runtime_error(std::string("MAME has no option \"") + name + "\"");
+		throw std::runtime_error("error.mame_option" TEXT_INNER + std::string(name));
 	opts.set_value(name, value, OPTION_PRIORITY_CMDLINE);
 }
 
@@ -675,8 +684,8 @@ bool set_given(std::string const &name)
 std::string status_text(game_driver const &driver, machine_config const &config)
 {
 	std::vector<std::string> parts;
-	if (driver.type.emulation_flags() & device_t::flags::NOT_WORKING) parts.emplace_back("MAME marks this machine as NOT WORKING");
-	if (driver.flags & MACHINE_MECHANICAL) parts.emplace_back("the machine has mechanical parts MAME does not show");
+	if (driver.type.emulation_flags() & device_t::flags::NOT_WORKING) parts.emplace_back("report.not_working");
+	if (driver.flags & MACHINE_MECHANICAL) parts.emplace_back("report.mechanical");
 	device_t::feature_type unemulated = device_t::feature::NONE, imperfect = device_t::feature::NONE;
 	for (device_t &device : device_enumerator(config.root_device()))
 	{
@@ -688,13 +697,19 @@ std::string status_text(game_driver const &driver, machine_config const &config)
 		{ device_t::feature::PALETTE, "colours" }, { device_t::feature::SOUND, "sound" },
 		{ device_t::feature::TIMING, "timing" }, { device_t::feature::CONTROLS, "controls" },
 	};
+	/* the keys: "report.not_emulated.protection", "report.not_emulated.graphics",
+	 * "report.not_emulated.colours", "report.not_emulated.sound",
+	 * "report.not_emulated.timing", "report.not_emulated.controls",
+	 * "report.imperfect.protection", "report.imperfect.graphics",
+	 * "report.imperfect.colours", "report.imperfect.sound",
+	 * "report.imperfect.timing", "report.imperfect.controls" */
 	for (auto const &n : names)
 	{
-		if (unemulated & n.bit) parts.push_back(std::string(n.name) + " not emulated");
-		else if (imperfect & n.bit) parts.push_back(std::string(n.name) + " imperfect");
+		if (unemulated & n.bit) parts.push_back(std::string("report.not_emulated.") + n.name);
+		else if (imperfect & n.bit) parts.push_back(std::string("report.imperfect.") + n.name);
 	}
 	std::string out;
-	for (auto const &p : parts) out += (out.empty() ? "" : "; ") + p;
+	for (auto const &p : parts) out += (out.empty() ? "" : TEXT_LINE) + p;
 	return out;
 }
 
@@ -735,7 +750,7 @@ extern "C" int mame_set_game(const char *name)
 	push_output();
 	s_game = name;
 	if (driver_list::find(name) >= 0) return 0;
-	s_error = "MAME has no machine named \"" + s_game + "\".";
+	s_error = "error.no_machine_named" TEXT_INNER + s_game;
 	try
 	{
 		emu_options options;
@@ -747,10 +762,10 @@ extern "C" int mame_set_game(const char *name)
 			if (index >= 0)
 				names += (names.empty() ? "" : ", ") + std::string(driver_list::driver(index).name)
 					+ " (" + driver_list::driver(index).type.fullname() + ")";
-		if (!names.empty()) s_error += " The closest names: " + names + ".";
+		if (!names.empty()) s_error += TEXT_LINE "error.closest_names" TEXT_ARG + names;
 	}
 	catch (std::exception const &) { }
-	s_error += " A game is known by the name of its file: ssf2t.zip is the machine ssf2t.";
+	s_error += TEXT_LINE "error.known_by_file";
 	return 1;
 }
 
@@ -847,16 +862,17 @@ std::vector<needed_file> audit(emu_options &options, game_driver const &driver, 
 				if (record->name() == f.name && (record->type() == media_auditor::media_type::DISK) == f.disc) break;
 			if (record == records.end())
 			{
-				if (f.required) f.problem = "missing";
+				if (f.required) f.problem = "report.missing";
 			}
 			else
 			{
 				switch (record->substatus())
 				{
-				case media_auditor::audit_substatus::NOT_FOUND: f.problem = "missing"; break;
-				case media_auditor::audit_substatus::FOUND_BAD_CHECKSUM: f.problem = "found, but its contents are not the ones MAME expects"; break;
+				case media_auditor::audit_substatus::NOT_FOUND: f.problem = "report.missing"; break;
+				case media_auditor::audit_substatus::FOUND_BAD_CHECKSUM: f.problem = "report.bad_contents"; break;
 				case media_auditor::audit_substatus::FOUND_WRONG_LENGTH:
-					f.problem = util::string_format("found, but it is %d bytes and MAME expects %d", record->actual_length(), record->expected_length());
+					f.problem = "report.wrong_size" TEXT_INNER + std::to_string(record->actual_length()) + TEXT_INNER
+						+ std::to_string(record->expected_length());
 					break;
 				default: break;
 				}
@@ -1073,15 +1089,14 @@ static const char *report(bool wizard)
 	for (needed_file const &f : s_desc.problems)
 		if (f.disc || !awaited(f.set)) problems.push_back(&f);
 
-	out = s_desc.title + ".";
-	if (!s_desc.status.empty()) out += " MAME's notes: " + s_desc.status + ".";
+	// a text each, a line each (TEXT_LINE)
+	out = "report.title" TEXT_ARG + s_desc.title;
+	if (!s_desc.status.empty()) out += TEXT_LINE + s_desc.status;
 	if (s_desc.files == 0)
-		out += " This machine needs no files.";
+		out += TEXT_LINE "report.no_files";
 	else
 	{
-		out += " It reads " + std::to_string(s_desc.files) + " files from";
-		bool first = true;
-		std::string later;
+		std::string from, notGiven, later;
 		for (auto const &set : s_desc.sets)
 		{
 			// a set that was not given and is not missed: its files are in
@@ -1090,28 +1105,32 @@ static const char *report(bool wizard)
 			for (needed_file const &f : s_desc.problems) missed = missed || f.set == set.first;
 			if (!set.second && !missed) continue;
 			if (awaited(set.first)) later += (later.empty() ? "" : ", ") + set.first + ".zip";
-			out += std::string(first ? "" : ",") + " " + set.first + ".zip" + (set.second || awaited(set.first) ? "" : " (NOT GIVEN)");
-			first = false;
+			else if (!set.second) notGiven += (notGiven.empty() ? "" : ", ") + set.first + ".zip";
+			from += (from.empty() ? "" : ", ") + set.first + ".zip";
 		}
-		out += ".";
-		if (!later.empty())
-			out += " The Firmware page asks for " + later + ".";
+		out += TEXT_LINE "report.reads" TEXT_ARG + std::to_string(s_desc.files) + TEXT_ARG + from;
+		if (!notGiven.empty()) out += TEXT_LINE "report.not_given" TEXT_ARG + notGiven;
+		if (!later.empty()) out += TEXT_LINE "report.firmware_asks" TEXT_ARG + later;
 	}
 	if (problems.empty())
 	{
 		if (s_desc.files) out += wizard && problems.size() != s_desc.problems.size()
-			? " Every file of the game's own set was found." : " All of them were found.";
+			? TEXT_LINE "report.own_set_found" : TEXT_LINE "report.all_found";
 	}
 	else
 	{
-		out += " " + std::to_string(problems.size()) + (problems.size() == 1 ? " file is" : " files are") + " missing or wrong:";
+		out += TEXT_LINE "report.problems" TEXT_ARG + std::to_string(problems.size());
 		size_t shown = 0;
 		for (needed_file const *f : problems)
 		{
-			if (++shown > 12) { out += " ... and " + std::to_string(problems.size() - 12) + " more"; break; }
-			out += std::string(shown > 1 ? ";" : "") + " " + f->name + (f->disc ? ".chd (a disc image)" : " (in " + f->set + ".zip)") + " - " + f->problem;
+			if (++shown > 12)
+			{
+				out += TEXT_LINE "report.more" TEXT_ARG + std::to_string(problems.size() - 12);
+				break;
+			}
+			out += f->disc ? TEXT_LINE "report.disc_problem" TEXT_ARG + f->name + TEXT_ARG + f->problem
+				: TEXT_LINE "report.file_problem" TEXT_ARG + f->name + TEXT_ARG + f->set + TEXT_ARG + f->problem;
 		}
-		out += ".";
 	}
 	return out.c_str();
 }
@@ -1131,14 +1150,14 @@ extern "C" const char *mame_game_settings(void)
 	if (s_desc.bios.size() > 1)
 	{
 		std::string chosen = s_desc.bios[0].second;
-		out += "{\"name\":\"bios\",\"display\":\"BIOS\",\"type\":\"enum\",\"options\":[";
+		out += "{\"name\":\"bios\",\"display\":\"game_setting.bios\",\"type\":\"enum\",\"options\":[";
 		for (size_t i = 0; i < s_desc.bios.size(); i++)
 		{
 			out += (i ? "," : "") + json(s_desc.bios[i].second);
 			if (s_desc.bios[i].first == s_desc.default_bios) chosen = s_desc.bios[i].second;
 		}
 		out += "],\"default\":" + json(chosen) + ",\"description\":"
-			+ json("Which of the machine's BIOS versions it starts with. The default is MAME's. A movie needs the same one to play back.") + "}";
+			+ json("game_setting.bios.about") + "}";
 	}
 	for (described_switch const &sw : s_desc.switches)
 	{
@@ -1146,8 +1165,7 @@ extern "C" const char *mame_game_settings(void)
 		out += "{\"name\":" + json(sw.kind + "." + sw.name) + ",\"display\":" + json(sw.name) + ",\"type\":\"enum\",\"options\":[";
 		for (size_t i = 0; i < sw.options.size(); i++) out += (i ? "," : "") + json(sw.options[i]);
 		out += "],\"default\":" + json(sw.chosen) + ",\"description\":"
-			+ json(std::string(sw.kind == "dip" ? "A dip switch of this game's board" : "A configuration switch of this machine")
-				+ ": '" + sw.name + "'. The game reads it as part of the machine, so a movie needs the same value to play back. The default is MAME's.") + "}";
+			+ json((sw.kind == "dip" ? "game_setting.dip" TEXT_ARG : "game_setting.config_switch" TEXT_ARG) + sw.name) + "}";
 	}
 	return (out += "]").c_str();
 }
@@ -1163,12 +1181,12 @@ extern "C" const char *mame_game_firmware(void)
 	for (described_set const &set : s_desc.firmware)
 	{
 		std::string const file = set.name + ".zip";
-		std::string const what = set.role == "bios" ? "the BIOS of this game's board"
-			: set.role == "parent" ? "the set this game is a version of"
-			: "a device this game's board has";
+		std::string const what = set.role == "bios" ? "game_firmware.bios"
+			: set.role == "parent" ? "game_firmware.parent"
+			: "game_firmware.device";
 		out += out.size() > 1 ? "," : "";
 		out += "{\"id\":" + json(file) + ",\"display\":" + json(file) + ",\"name\":" + json(file)
-			+ ",\"description\":" + json("MAME's rom set " + set.name + ": " + what + ". This game reads files from it that its own set does not hold. It is a .zip, with the files of the MAME version this core is built from.");
+			+ ",\"description\":" + json("game_firmware.about" TEXT_ARG + set.name + TEXT_ARG + what);
 		if (!set.with_bios.empty())
 		{
 			// needed with some BIOS choices only. A project that leaves the
@@ -1227,7 +1245,7 @@ extern "C" int mame_init(void)
 		for (auto const &kv : s_options)
 			set(o, kv.first.c_str(), kv.second);
 		if (!o.system())
-			throw std::runtime_error("MAME has no machine named \"" + s_game + "\"");
+			throw std::runtime_error("error.no_machine_named" TEXT_INNER + s_game);
 
 		s_osd = new chimera_osd();
 		s_manager = new chimera_manager(o, *s_osd);

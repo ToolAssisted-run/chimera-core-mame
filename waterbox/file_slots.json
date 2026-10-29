@@ -3,34 +3,34 @@
   "slots": [
     {
       "id": "romset",
-      "title": "Rom set",
+      "title": "slot.romset",
       "min": 1,
       "max": 1,
       "formats": [
         "zip",
         "7z"
       ],
-      "help": "The game's ROM set, with the file name MAME uses (for example ssf2t.zip). The name is how the core knows which game it is. The other sets the game reads from - its board's BIOS set (neogeo.zip), its parent's set if it is a clone, the sets of the devices it uses (qsound_hle.zip) - are asked for on the Firmware page, where Chimera remembers them for the next game. The settings page names every file that is missing."
+      "help": "slot.romset.help"
     },
     {
       "id": "disc",
-      "title": "Disc images",
+      "title": "slot.disc",
       "min": 0,
       "max": 8,
       "formats": [
         "chd"
       ],
-      "help": "The CHD images of a game that has a hard disk, a CD or a laserdisc, with the file names MAME uses (for example 420uaa04.chd). The settings page names an image that is missing."
+      "help": "slot.disc.help"
     },
     {
       "id": "savedata",
-      "title": "Save data",
+      "title": "slot.savedata",
       "min": 0,
       "max": 32,
       "formats": [
         "nv"
       ],
-      "help": "What the machine keeps when the power is off, in the files Export Save Data wrote: its settings, its high scores, its EEPROM. Each file is put back into the device it came from before the first frame. With none, the machine starts as it left the factory."
+      "help": "slot.savedata.help"
     }
   ]
 }

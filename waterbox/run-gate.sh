@@ -292,15 +292,15 @@ fi
 # ----------------------------------- 3. the database, with no game at all
 # what the New Project window is told, asked of the core in the sandbox
 "$wbxrun" "$core" "$work/pong" --suggest > "$work/pong.suggest" 2> /dev/null || true
-check "database: a machine that needs no files says so" "" grep -q "This machine needs no files" "$work/pong.suggest"
+check "database: a machine that needs no files says so" "" grep -q "report.no_files" "$work/pong.suggest"
 check "database: a game's switches are its settings" "$(grep -o '"name":"[a-z]*\.[^"]*"' "$work/pong.suggest" | wc -l) switches (Pong)" \
 	grep -q '"name":"dip.Game Won"' "$work/pong.suggest"
 # a name MAME does not know: refused, with the closest names
 folder noname '{}' pnog.zip
 "$wbxrun" "$core" "$work/noname" --suggest > "$work/noname.suggest" 2> /dev/null || true
 "$wbxrun" "$core" "$work/noname" --frames 1 > "$work/noname.run" 2>&1 || true
-check "database: an unknown name is refused with the closest names" "$(grep -o 'closest names: [^.]*' "$work/noname.suggest" | cut -c1-60)" \
-	sh -c "grep -q 'no machine named' '$work/noname.suggest' && grep -q 'pong' '$work/noname.suggest' && grep -q 'Init failed.*no machine named' '$work/noname.run'"
+check "database: an unknown name is refused with the closest names" "$(grep -o 'error.closest_names[^"]*' "$work/noname.suggest" | cut -c1-60)" \
+	sh -c "grep -q 'error.no_machine_named' '$work/noname.suggest' && grep -q 'pong' '$work/noname.suggest' && grep -q 'Init failed.*error.no_machine_named' '$work/noname.run'"
 # a game whose set is an empty zip: every file is named, with its set, before
 # and at load. Robby Roto's driver is in both builds.
 mkdir -p "$work/empty"
@@ -310,8 +310,8 @@ zipfile.ZipFile(sys.argv[1], 'w').close()" "$work/empty/robby.zip"
 printf '{"romset":["robby.zip"],"savedata":[]}' > "$work/empty/slots"; printf '{}' > "$work/empty/settings"
 "$wbxrun" "$core" "$work/empty" --suggest > "$work/empty.suggest" 2> /dev/null || true
 "$wbxrun" "$core" "$work/empty" --frames 1 > "$work/empty.run" 2>&1 || true
-check "database: a set with nothing in it names each missing file" "$(grep -o '[0-9]* files are missing or wrong' "$work/empty.suggest")" \
-	sh -c "grep -q '(in robby.zip) - missing' '$work/empty.suggest' && grep -q 'Init failed.*(in robby.zip) - missing' '$work/empty.run'"
+check "database: a set with nothing in it names each missing file" "$(grep -o 'report.problems[^"]*' "$work/empty.suggest")" \
+	sh -c "grep -q 'report.file_problem[^\"]*robby[^\"]*report.missing' '$work/empty.suggest' && grep -q 'Init failed.*report.file_problem.*robby.*report.missing' '$work/empty.run'"
 # the per-game setting reaches the machine: Pong's game length switch
 "$wbxrun" "$core" "$work/pong" --frames 1 --list-dips 2> /dev/null | grep "^Game Won" > "$work/pong.dip" || true
 folder pong15 '{"dip.Game Won":"15"}' pong.zip
@@ -320,7 +320,7 @@ check "settings: a switch set in the project is the machine's" "$(cut -f1,2 "$wo
 	sh -c "cut -f2 '$work/pong.dip' | grep -qx 11 && cut -f2 '$work/pong15.dip' | grep -qx 15"
 folder pongbad '{"dip.Game Won":"99"}' pong.zip
 "$wbxrun" "$core" "$work/pongbad" --frames 1 > "$work/pongbad.run" 2>&1 || true
-check "settings: a value the game does not have is refused" "" grep -q 'Init failed.*has no value' "$work/pongbad.run"
+check "settings: a value the game does not have is refused" "" grep -q 'Init failed.*error.bad_setting' "$work/pongbad.run"
 
 # ------------------------------------------------------- 4. real games
 # game <name> <label> <boot frames> <sets...>: the three comparisons, lag,
@@ -375,11 +375,11 @@ if game ssf2t "Super Street Fighter II Turbo (CPS-2)" 1500 ssf2t.zip qsound_hle.
 	"$wbxrun" "$core" "$work/ssf2t-noq" --frames 1 > "$work/ssf2t-noq.run" 2>&1 || true
 	"$wbxrun" "$core" "$work/ssf2t" --suggest > "$work/ssf2t.suggest" 2> /dev/null || true
 	check "ssf2t: the device set it needs is asked for as firmware" "$(firmware_of "$work/ssf2t-noq.suggest")" \
-		sh -c "[ '$(firmware_of "$work/ssf2t-noq.suggest")' = qsound_hle.zip ] && grep -q 'The Firmware page asks for qsound_hle.zip' '$work/ssf2t-noq.suggest'"
+		sh -c "[ '$(firmware_of "$work/ssf2t-noq.suggest")' = qsound_hle.zip ] && grep -q 'report.firmware_asks[^\"]*qsound_hle.zip' '$work/ssf2t-noq.suggest'"
 	check "ssf2t: the answer is the same once the set is given" "" \
 		[ "$(firmware_of "$work/ssf2t.suggest")" = "$(firmware_of "$work/ssf2t-noq.suggest")" ]
 	check "ssf2t: a load without the device set is refused, naming it" "dl-1425.bin, qsound_hle.zip" \
-		sh -c "grep -q 'Init failed.*qsound_hle.zip (NOT GIVEN)' '$work/ssf2t-noq.run' && grep -q 'dl-1425.bin (in qsound_hle.zip) - missing' '$work/ssf2t-noq.run'"
+		sh -c "grep -q 'Init failed.*report.not_given.qsound_hle.zip' '$work/ssf2t-noq.run' && grep -q 'report.file_problem.dl-1425.bin.qsound_hle.report.missing' '$work/ssf2t-noq.run'"
 	# save data: the EEPROM out, back in, out again
 	mkdir -p "$work/ssf2t.save1" "$work/ssf2t.save2"
 	"$wbxrun" "$core" "$work/ssf2t" --frames 2400 --report 2400 --exercise --savedata-out "$work/ssf2t.save1" > /dev/null 2>&1 || true
@@ -391,7 +391,7 @@ if game ssf2t "Super Street Fighter II Turbo (CPS-2)" 1500 ssf2t.zip qsound_hle.
 		printf 'not an eeprom' > "$work/wrong.nv"
 		folder ssf2t-wrong '{}' ssf2t.zip qsound_hle.zip "$work/wrong.nv"
 		"$wbxrun" "$core" "$work/ssf2t-wrong" --frames 1 > "$work/ssf2t-wrong.run" 2>&1 || true
-		check "ssf2t: save data that is no device's is refused" "" grep -q "Init failed.*wrong.nv is not one of this machine's" "$work/ssf2t-wrong.run"
+		check "ssf2t: save data that is no device's is refused" "" grep -q "Init failed.*error.save_not_kept[a-z_]*.wrong.nv" "$work/ssf2t-wrong.run"
 	else
 		report FAIL "ssf2t: its save data goes out and back in unchanged" "no eeprom.nv exported"
 	fi
@@ -443,7 +443,7 @@ PY
 	cp "$roms/neogeo.zip" "$work/fatfury3-split/"
 	"$wbxrun" "$core" "$work/fatfury3-split" --frames 600 --report 600 > "$work/fatfury3-split.w" 2> /dev/null || true
 	check "fatfury3: a set without its BIOS files asks for neogeo.zip as firmware" "$(firmware_of "$work/fatfury3-split.suggest")" \
-		sh -c "[ '$(firmware_of "$work/fatfury3-split.suggest")' = neogeo.zip ] && grep -q 'Init failed.*neogeo.zip (NOT GIVEN)' '$work/fatfury3-split.run'"
+		sh -c "[ '$(firmware_of "$work/fatfury3-split.suggest")' = neogeo.zip ] && grep -q 'Init failed.*report.not_given.neogeo.zip' '$work/fatfury3-split.run'"
 	check "fatfury3: the same set runs once neogeo.zip is there" "$(tail -1 "$work/fatfury3-split.w" | cut -c1-40)" \
 		[ "$(stream "$work/fatfury3-split.w" | wc -l)" = 1 ]
 	if [ -n "$(firmware_of "$work/fatfury3.suggest")" ]; then
@@ -483,7 +483,7 @@ if game cryptklr "Crypt Killer (Konami GQ, a hard disk image)" 3600 cryptklr.zip
 		sh -c "[ ! -e '$work/cryptklr/diff' ] && [ \"\$(ls '$work/cryptklr' | wc -l)\" = 4 ]"
 	folder cryptklr-nodisk '{}' cryptklr.zip
 	"$wbxrun" "$core" "$work/cryptklr-nodisk" --suggest > "$work/cryptklr-nodisk.suggest" 2> /dev/null || true
-	check "cryptklr: a missing disc image is named" "420uaa04.chd" grep -q '420uaa04.chd (a disc image) - missing' "$work/cryptklr-nodisk.suggest"
+	check "cryptklr: a missing disc image is named" "420uaa04.chd" grep -q 'report.disc_problem[^",]*420uaa04[^",]*report.missing' "$work/cryptklr-nodisk.suggest"
 fi
 
 game rampart "Rampart (Atari)" 600 rampart.zip && lag rampart
