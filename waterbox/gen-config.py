@@ -182,6 +182,7 @@ def main():
         "systemNames": {"ARCADE": "Arcade"},
         "author": "The MAME team; chimera port by Sergio Martin",
         "url": "https://github.com/ToolAssisted-run/chimera-core-mame",
+        "runsOn": ["windows-x86_64", "linux-x86_64", "macos-x86_64"],
         "romFile": "romset",
         "deterministic": True,
         "suggestSettings": True,
